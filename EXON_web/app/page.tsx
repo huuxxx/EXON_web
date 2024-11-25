@@ -6,7 +6,7 @@ import Particles from "./components/particles";
 const navigation = [
   { name: "Steam", href: "https://store.steampowered.com/app/3356980?beta=0" },
   { name: "Discord", href: "https://discord.gg/xGZsuJm5h7" },
-  { name: "Blog", href: "https://hux-dev.com/exon" },
+  { name: "Blog", href: "https://hux-dev.com/blogs/EXON/" },
 ];
 
 export default function Home() {
