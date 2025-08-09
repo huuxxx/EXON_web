@@ -45,10 +45,10 @@ export default function Home() {
 
         <div className="p-10">
           <Image
-            src="/gif_rifle_hvga_320_30.gif"
+            src="/RifleSequence.gif"
             alt="EXON Gameplay"
-            width={480}
-            height={320}
+            width={320}
+            height={180}
           />
         </div>
 
