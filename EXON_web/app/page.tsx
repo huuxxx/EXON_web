@@ -14,12 +14,15 @@ export default function Home() {
   return (
     <>
       <div className="flex justify-center items-center mt-[-50px]">
-        <Image
-          src="/EXON_Logo.png"
-          alt="EXON Logo"
-          width={896}
-          height={504}
-        />
+        <div className="animate-hue-rotate">
+          <Image
+            src="/EXON_Logo.png"
+            alt="EXON Logo"
+            width={896}
+            height={504}
+            className="rounded-lg"
+          />
+      </div>
       </div>
 
       <div className="flex flex-col items-center">
@@ -51,7 +54,7 @@ export default function Home() {
         <div className="text-center animate-fade-in mt-5">
           <h2 className="text-sm text-zinc-500 whitespace-pre-line">
             <p>
-              Adventure through exotic locations, discover ancient artifacts and sacred relics of unimaginable power. Shatter demonic forces with brutal weapons and devastating abilities.
+              Adventure through the far reaches of a foreign universe, discover ancient artifacts of unimaginable power, shatter demonic forces with brutal weapons and devastating abilities.
             </p>
           </h2>
         </div>

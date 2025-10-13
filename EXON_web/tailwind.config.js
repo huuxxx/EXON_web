@@ -41,8 +41,14 @@ module.exports = {
 				title: "title 3s ease-out forwards",
 				"fade-left": "fade-left 3s ease-in-out forwards",
 				"fade-right": "fade-right 3s ease-in-out forwards",
+				'hue-rotate': 'hue-rotate 5s linear infinite',
+				
 			},
 			keyframes: {
+				'hue-rotate': {
+				'0%': { filter: 'hue-rotate(0deg)' },
+				'100%': { filter: 'hue-rotate(360deg)' },
+				},
 				"fade-in": {
 					"0%": {
 						opacity: "0%",
