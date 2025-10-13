@@ -11,8 +11,10 @@
   "dependencies": {
     "@next/font": "^13.5.4",
     "@next/mdx": "^13.5.4",
+    "@tailwindcss/aspect-ratio": "^0.4.2",
     "@upstash/redis": "^1.23.3",
     "contentlayer": "^0.3.4",
+    "embla-carousel-react": "^8.6.0",
     "framer-motion": "^10.16.4",
     "lucide-react": "^0.284.0",
     "markdown-wasm": "^1.2.0",

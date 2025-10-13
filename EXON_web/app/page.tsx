@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import React from "react";
 import Particles from "./components/particles";
+import GameCarousel from "./components/GameCarousel";
 
 const navigation = [
   { name: "Steam", href: "https://store.steampowered.com/app/3356980?beta=0" },
@@ -22,7 +23,7 @@ export default function Home() {
       </div>
 
       <div className="flex flex-col items-center">
-        <nav className="animate-fade-in bg-gradient-to-tl from-black via-zinc-600/20">
+        <nav className="animate-fade-in bg-gradient-to-tl from-black via-zinc-600/20 mb-5">
           <ul className="flex items-center justify-center gap-8">
             {navigation.map((item) => (
               <Link
@@ -36,6 +37,8 @@ export default function Home() {
           </ul>
         </nav>
 
+        <GameCarousel/>
+
         <div className="hidden w-screen h-px animate-glow md:block animate-fade-left bg-gradient-to-r from-zinc-300/0 via-zinc-300/50 to-zinc-300/0" />
 
         <Particles
@@ -43,25 +46,12 @@ export default function Home() {
           quantity={100}
         />
 
-        <div className="p-10">
-          <Image
-            src="/RifleSequence.gif"
-            alt="EXON Gameplay"
-            width={320}
-            height={180}
-          />
-        </div>
-
         <div className="hidden w-screen h-px animate-glow md:block animate-fade-right bg-gradient-to-r from-zinc-300/0 via-zinc-300/50 to-zinc-300/0" />
 
-        <div className="text-center animate-fade-in">
+        <div className="text-center animate-fade-in mt-5">
           <h2 className="text-sm text-zinc-500 whitespace-pre-line">
             <p>
-              Blast your way through hordes of demonic forces in an exotic universe with an arsenal of powerful weapons and abilities.
-            </p>
-            <br />
-            <p>
-            Demo available now on Steam!
+              Adventure through exotic locations, discover ancient artifacts and sacred relics of unimaginable power. Shatter demonic forces with brutal weapons and devastating abilities.
             </p>
           </h2>
         </div>
