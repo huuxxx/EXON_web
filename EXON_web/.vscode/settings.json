@@ -3,6 +3,11 @@
   "typescript.enablePromptUseWorkspaceTsdk": true,
   "editor.defaultFormatter": "esbenp.prettier-vscode",
   "editor.formatOnSave": true,
+  "editor.formatOnSaveMode": "file",
+  "typescript.format.enable": false,
+  "javascript.format.enable": false,
+  "prettier.singleQuote": true,
+  "prettier.configPath": ".prettierrc",
   "[javascript]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
