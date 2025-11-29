@@ -1,6 +1,22 @@
 -- Example queries for identifying suspicious activity and potential attackers
 
--- 1. Find Steam IDs that have been rate-limited multiple times
+-- 1. Find Steam IDs with repeated ticket validation failures (pattern-based detection)
+SELECT 
+    steam_id,
+    COUNT(*) as failed_validations,
+    COUNT(DISTINCT ip_address) as unique_ips,
+    array_agg(DISTINCT request_result) as failure_reasons,
+    MIN(timestamp) as first_failure,
+    MAX(timestamp) as last_failure
+FROM request_logs
+WHERE request_result IN ('Invalid ticket', 'Steam ID mismatch', 'Not app owner', 'Validation failed')
+  AND timestamp > NOW() - INTERVAL '24 hours'
+  AND steam_id IS NOT NULL
+GROUP BY steam_id
+HAVING COUNT(*) >= 10  -- 10+ failures in 24 hours suggests attack
+ORDER BY failed_validations DESC;
+
+-- 2. Find Steam IDs that have been rate-limited multiple times
 SELECT 
     steam_id,
     COUNT(*) as rate_limited_count,
@@ -13,7 +29,7 @@ GROUP BY steam_id
 ORDER BY rate_limited_count DESC
 LIMIT 50;
 
--- 2. Find IPs hitting rate limits frequently
+-- 3. Find IPs hitting rate limits frequently
 SELECT 
     ip_address,
     COUNT(*) as rate_limited_count,
@@ -26,8 +42,8 @@ GROUP BY ip_address
 ORDER BY rate_limited_count DESC
 LIMIT 50;
 
--- 3. Find Steam IDs with suspiciously low/invalid scores (lower = better for time-based)
--- Adjust thresholds based on your game (e.g., < 10 seconds is impossible)
+-- 3. Find Steam IDs with suspiciously fast scores
+-- Scores are in milliseconds
 SELECT 
     steam_id,
     MIN(score) as best_score,
@@ -36,7 +52,7 @@ SELECT
     COUNT(CASE WHEN rate_limited THEN 1 END) as rate_limited_count,
     COUNT(CASE WHEN success THEN 1 END) as successful_submissions
 FROM request_logs
-WHERE steam_id IS NOT NULL AND (score < 10 OR score > 36000)  -- Suspiciously fast or impossibly slow
+WHERE steam_id IS NOT NULL AND (score < 240000)
 GROUP BY steam_id
 ORDER BY best_score ASC
 LIMIT 50;
@@ -54,7 +70,7 @@ FROM request_logs
 WHERE steam_id IS NOT NULL
 GROUP BY steam_id
 HAVING COUNT(CASE WHEN rate_limited THEN 1 END) > 5  -- More than 5 rate-limits
-   OR MIN(score) < 10  -- Impossibly fast time
+   OR MIN(score) < 240000  -- Impossibly fast time
 ORDER BY rate_limited_count DESC, best_score ASC
 LIMIT 50;
 
@@ -115,3 +131,18 @@ ORDER BY rate_limited_count DESC, best_score ASC;
 -- 11. Clean up old logs (optional - run periodically to save space)
 -- Keep only last 90 days of logs
 -- DELETE FROM request_logs WHERE timestamp < NOW() - INTERVAL '90 days';
+
+-- 12. Auto-ban candidates based on patterns (for automated cron job)
+-- Insert Steam IDs with 10+ validation failures in last 24 hours into ban table
+-- INSERT INTO banned_steam_ids (steam_id, reason)
+-- SELECT 
+--     steam_id,
+--     'Automated ban: ' || COUNT(*) || ' ticket validation failures in 24h'
+-- FROM request_logs
+-- WHERE request_result IN ('Invalid ticket', 'Steam ID mismatch', 'Not app owner', 'Validation failed')
+--   AND timestamp > NOW() - INTERVAL '24 hours'
+--   AND steam_id IS NOT NULL
+--   AND steam_id NOT IN (SELECT steam_id FROM banned_steam_ids)  -- Don't duplicate
+-- GROUP BY steam_id
+-- HAVING COUNT(*) >= 10
+-- ON CONFLICT (steam_id) DO NOTHING;  -- Skip if already banned
