@@ -1,5 +1,27 @@
 import { NextResponse } from 'next/server';
 import { Constants } from '@/util/constants';
+import { Redis } from '@upstash/redis';
+
+const RATE_LIMIT_WINDOW_SEC = 600; // 10 minutes
+const MAX_SUBMISSIONS_PER_WINDOW = 3; // 3 full completions per 10 minutes
+const redis = Redis.fromEnv();
+
+async function checkRateLimit(key: string): Promise<{ limited: boolean; retryAfter?: number }> {
+  const window = RATE_LIMIT_WINDOW_SEC;
+  const bucket = `rl:${key}:${Math.floor(Date.now() / 1000 / window)}`;
+
+  const count = await redis.incr(bucket);
+  if (count === 1) {
+    await redis.expire(bucket, window);
+  }
+
+  if (count > MAX_SUBMISSIONS_PER_WINDOW) {
+    const ttl = await redis.ttl(bucket);
+    return { limited: true, retryAfter: ttl > 0 ? ttl : window };
+  }
+
+  return { limited: false };
+}
 
 export async function POST(req: Request) {
   try {
@@ -7,6 +29,17 @@ export async function POST(req: Request) {
 
     if (!steamId || score == null) {
       return NextResponse.json({ error: 'Missing parameters' }, { status: 400 });
+    }
+
+    // Determine client identity for rate limiting. Prefer Steam ID, fallback to IP.
+    const forwarded = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip');
+    const ip = forwarded ? forwarded.split(',')[0].trim() : 'unknown';
+    const limiterKey = steamId ? `steam:${steamId}` : `ip:${ip}`;
+
+    // Check rate limit via Redis
+    const rl = await checkRateLimit(limiterKey);
+    if (rl.limited) {
+      return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
     }
 
     const params = new URLSearchParams({
