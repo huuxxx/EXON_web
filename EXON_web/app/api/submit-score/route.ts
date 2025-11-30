@@ -81,7 +81,7 @@ export async function POST(req: Request) {
 
     const ipRateLimited = await checkRateLimit(ipLimiterKey);
     if (ipRateLimited.limited) {
-      logRequest({
+      await logRequest({
         ipAddress: ip,
         steamId,
         levelName: LEVEL_NAME,
@@ -99,7 +99,7 @@ export async function POST(req: Request) {
 
     const steamRateLimited = await checkRateLimit(steamLimiterKey);
     if (steamRateLimited.limited) {
-      logRequest({
+      await logRequest({
         ipAddress: ip,
         steamId,
         levelName: LEVEL_NAME,
@@ -122,7 +122,7 @@ export async function POST(req: Request) {
       if (steamId) {
         await banSteamId(steamId, ip, 'Missing required fields (tampered client)');
       }
-      logRequest({
+      await logRequest({
         ipAddress: ip,
         steamId,
         levelName: LEVEL_NAME,
@@ -143,27 +143,21 @@ export async function POST(req: Request) {
     // 3. Steam ticket validation
     const ticketValidation = await validateSteamTicket(steamId, ticket);
     if (!ticketValidation.valid) {
-      let dbError = null;
-      try {
-        await logRequest({
-          ipAddress: ip,
-          steamId,
-          levelName: LEVEL_NAME,
-          difficulty: body.difficulty,
-          score,
-          rateLimited: false,
-          success: false,
-          requestResult: ticketValidation.reason || 'Invalid ticket',
-        });
-      } catch (err: any) {
-        dbError = err.message;
-      }
+      await logRequest({
+        ipAddress: ip,
+        steamId,
+        levelName: LEVEL_NAME,
+        difficulty: body.difficulty,
+        score,
+        rateLimited: false,
+        success: false,
+        requestResult: ticketValidation.reason || 'Invalid ticket',
+      }).catch(() => {});
       return NextResponse.json(
         showDetailedResponse
           ? {
               error: 'Steam ticket validation failed',
               reason: ticketValidation.reason,
-              ...(dbError && { dbLogError: dbError }),
             }
           : {},
         { status: 403 }
@@ -173,7 +167,7 @@ export async function POST(req: Request) {
     // 4. DB ban check
     const banned = await isSteamIdBanned(steamId);
     if (banned) {
-      logRequest({
+      await logRequest({
         ipAddress: ip,
         steamId,
         levelName: LEVEL_NAME,
@@ -199,7 +193,7 @@ export async function POST(req: Request) {
       !body.dataHMAC
     ) {
       await banSteamId(steamId, ip, 'Missing data fields (tampered client)');
-      logRequest({
+      await logRequest({
         ipAddress: ip,
         steamId,
         levelName: LEVEL_NAME,
@@ -221,10 +215,11 @@ export async function POST(req: Request) {
       );
     }
 
-    // 6. Verify HMAC signature
+    // 6. Verify HMAC signature (auto-ban - legitimate client always sends valid HMAC)
     const hmacValidation = verifyHMAC(body);
     if (!hmacValidation.valid) {
-      logRequest({
+      await banSteamId(steamId, ip, 'Invalid HMAC signature (tampered client)');
+      await logRequest({
         ipAddress: ip,
         steamId,
         levelName: LEVEL_NAME,
@@ -232,7 +227,7 @@ export async function POST(req: Request) {
         score,
         rateLimited: false,
         success: false,
-        requestResult: hmacValidation.reason || 'Invalid HMAC',
+        requestResult: hmacValidation.reason || 'Invalid HMAC - AUTO BAN',
       }).catch(() => {});
       return NextResponse.json(
         showDetailedResponse
@@ -245,7 +240,7 @@ export async function POST(req: Request) {
     // 7. Validate stats ranges and consistency
     const statsValidation = validateStats(body);
     if (!statsValidation.valid) {
-      logRequest({
+      await logRequest({
         ipAddress: ip,
         steamId,
         levelName: LEVEL_NAME,
@@ -298,7 +293,7 @@ export async function POST(req: Request) {
     console.log('submit-score Steam response: ', json ?? raw);
     success = steamRes.ok ? true : false;
 
-    logRequest({
+    await logRequest({
       ipAddress: ip,
       steamId,
       levelName: LEVEL_NAME,
@@ -311,7 +306,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ json }, { status: 200 });
   } catch (err: any) {
-    logRequest({
+    await logRequest({
       ipAddress: ip,
       steamId: steamId,
       levelName: LEVEL_NAME,
