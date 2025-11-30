@@ -81,6 +81,7 @@ export async function POST(req: Request) {
 
     const ipRateLimited = await checkRateLimit(ipLimiterKey);
     if (ipRateLimited.limited) {
+      console.log(`🚫 Rate limited (IP): ${ip} | Steam ID: ${steamId || 'unknown'}`);
       await logRequest({
         ipAddress: ip,
         steamId,
@@ -99,6 +100,7 @@ export async function POST(req: Request) {
 
     const steamRateLimited = await checkRateLimit(steamLimiterKey);
     if (steamRateLimited.limited) {
+      console.log(`🚫 Rate limited (Steam ID): ${steamId} | IP: ${ip}`);
       await logRequest({
         ipAddress: ip,
         steamId,
@@ -119,6 +121,9 @@ export async function POST(req: Request) {
 
     // 2. Essential validation (auto-ban - legitimate client always sends these)
     if (!steamId || !ticket) {
+      console.log(
+        `🚫 AUTO-BAN: Missing required fields | Steam ID: ${steamId || 'unknown'} | IP: ${ip}`
+      );
       if (steamId) {
         await banSteamId(steamId, ip, 'Missing required fields (tampered client)');
       }
@@ -143,6 +148,9 @@ export async function POST(req: Request) {
     // 3. Steam ticket validation
     const ticketValidation = await validateSteamTicket(steamId, ticket);
     if (!ticketValidation.valid) {
+      console.log(
+        `🚫 Invalid Steam ticket: ${steamId} | IP: ${ip} | Reason: ${ticketValidation.reason}`
+      );
       await logRequest({
         ipAddress: ip,
         steamId,
@@ -167,6 +175,7 @@ export async function POST(req: Request) {
     // 4. DB ban check
     const banned = await isSteamIdBanned(steamId);
     if (banned) {
+      console.log(`🚫 Banned user attempted access: ${steamId} | IP: ${ip}`);
       await logRequest({
         ipAddress: ip,
         steamId,
@@ -192,6 +201,7 @@ export async function POST(req: Request) {
       !body.abilityStats ||
       !body.dataHMAC
     ) {
+      console.log(`🚫 AUTO-BAN: Missing data fields | Steam ID: ${steamId} | IP: ${ip}`);
       await banSteamId(steamId, ip, 'Missing data fields (tampered client)');
       await logRequest({
         ipAddress: ip,
@@ -218,6 +228,9 @@ export async function POST(req: Request) {
     // 6. Verify HMAC signature (auto-ban - legitimate client always sends valid HMAC)
     const hmacValidation = verifyHMAC(body);
     if (!hmacValidation.valid) {
+      console.log(
+        `🚫 AUTO-BAN: Invalid HMAC | Steam ID: ${steamId} | IP: ${ip} | Reason: ${hmacValidation.reason}`
+      );
       await banSteamId(steamId, ip, 'Invalid HMAC signature (tampered client)');
       await logRequest({
         ipAddress: ip,
@@ -240,6 +253,7 @@ export async function POST(req: Request) {
     // 7. Validate stats ranges and consistency
     const statsValidation = validateStats(body);
     if (!statsValidation.valid) {
+      console.log(`🚫 Invalid stats: ${steamId} | IP: ${ip} | Reason: ${statsValidation.reason}`);
       await logRequest({
         ipAddress: ip,
         steamId,
@@ -290,8 +304,16 @@ export async function POST(req: Request) {
     const raw = await steamRes.text();
     let json: any = null;
     json = JSON.parse(raw);
-    console.log('submit-score Steam response: ', json ?? raw);
     success = steamRes.ok ? true : false;
+
+    if (success) {
+      console.log(
+        `✅ Successful submission: ${steamId} | IP: ${ip} | Difficulty: ${body.difficulty} | Score: ${score}ms`
+      );
+    } else {
+      console.log(`❌ Steam API error: ${steamId} | IP: ${ip}`);
+    }
+    console.log('submit-score Steam response: ', json ?? raw);
 
     await logRequest({
       ipAddress: ip,
@@ -306,6 +328,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ json }, { status: 200 });
   } catch (err: any) {
+    console.log(`❌ Parse error: ${steamId || 'unknown'} | IP: ${ip} | Error: ${err.message}`);
     await logRequest({
       ipAddress: ip,
       steamId: steamId,
