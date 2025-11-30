@@ -39,6 +39,31 @@ export async function isSteamIdBanned(steamId: string): Promise<boolean> {
 }
 
 /**
+ * Ban a Steam ID and log the associated IP address
+ */
+export async function banSteamId(
+  steamId: string,
+  ipAddress: string,
+  reason: string
+): Promise<void> {
+  try {
+    const pool = getPool();
+
+    // Insert ban with IP address included in reason for easy reference
+    const banReason = `${reason} (IP: ${ipAddress})`;
+    await pool.query(
+      'INSERT INTO banned_steam_ids (steam_id, reason) VALUES ($1, $2) ON CONFLICT (steam_id) DO NOTHING',
+      [steamId, banReason]
+    );
+
+    console.log(`🚫 AUTO-BAN: Steam ID ${steamId} | IP ${ipAddress} | Reason: ${reason}`);
+    console.log(`   Add to Netlify IP Blacklist: ${ipAddress}`);
+  } catch (error) {
+    console.error('Error banning Steam ID:', error);
+  }
+}
+
+/**
  * Log a request (async, non-blocking - fire-and-forget)
  */
 export async function logRequest(data: {

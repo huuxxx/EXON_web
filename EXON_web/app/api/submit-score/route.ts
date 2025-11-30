@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Constants } from '@/util/constants';
 import { Redis } from '@upstash/redis';
-import { isSteamIdBanned, logRequest } from '@/util/db';
+import { isSteamIdBanned, banSteamId, logRequest } from '@/util/db';
 import crypto from 'crypto';
 
 interface GunStats {
@@ -34,8 +34,9 @@ const MAX_SUBMISSIONS_PER_WINDOW = 3; // 3 full completions per 10 minutes
 const redis = Redis.fromEnv();
 
 // Validation constants
+const MIN_TOTAL_DAMAGE = 100000;
 const MAX_TOTAL_DAMAGE = 200000;
-const MAX_TOTAL_KILLS = 300;
+const MAX_TOTAL_KILLS = 275;
 const MAX_ABILITY_USES = 150;
 const MAX_UTILITY_STAT = 50000;
 const EXPECTED_ROUND_COUNT = 10;
@@ -72,18 +73,51 @@ export async function POST(req: Request) {
     score = body.finalScore;
     const ticket = body.ticket;
 
-    // Validate required fields
-    if (
-      !steamId ||
-      score == null ||
-      !ticket ||
-      !body.difficulty ||
-      !body.roundTimes ||
-      !body.roundKills ||
-      !body.gunStats ||
-      !body.abilityStats ||
-      !body.dataHMAC
-    ) {
+    // 1. Rate limit check - IP and Steam ID
+    const ipLimiterKey = `ip:${ip}`;
+    const steamLimiterKey = `steam:${steamId}`;
+
+    const ipRateLimited = await checkRateLimit(ipLimiterKey);
+    if (ipRateLimited.limited) {
+      logRequest({
+        ipAddress: ip,
+        steamId,
+        levelName: LEVEL_NAME,
+        difficulty: body.difficulty,
+        score,
+        rateLimited: true,
+        success: false,
+        requestResult: 'Rate limited (IP)',
+      }).catch(() => {});
+      return NextResponse.json(
+        isDev ? { error: 'Rate limited', retryAfter: ipRateLimited.retryAfter } : {},
+        { status: 429 }
+      );
+    }
+
+    const steamRateLimited = await checkRateLimit(steamLimiterKey);
+    if (steamRateLimited.limited) {
+      logRequest({
+        ipAddress: ip,
+        steamId,
+        levelName: LEVEL_NAME,
+        difficulty: body.difficulty,
+        score,
+        rateLimited: true,
+        success: false,
+        requestResult: 'Rate limited (Steam ID)',
+      }).catch(() => {});
+      return NextResponse.json(
+        isDev ? { error: 'Rate limited', retryAfter: steamRateLimited.retryAfter } : {},
+        { status: 429 }
+      );
+    }
+
+    // 2. Essential validation (auto-ban - legitimate client always sends these)
+    if (!steamId || !ticket) {
+      if (steamId) {
+        await banSteamId(steamId, ip, 'Missing required fields (tampered client)');
+      }
       logRequest({
         ipAddress: ip,
         steamId,
@@ -92,58 +126,17 @@ export async function POST(req: Request) {
         score,
         rateLimited: false,
         success: false,
-        requestResult: 'Missing parameters',
+        requestResult: 'Missing steamId or ticket - AUTO BAN',
       }).catch(() => {});
       return NextResponse.json(
         isDev
-          ? {
-              error: 'Missing parameters',
-              details:
-                'Required: steamId, ticket, difficulty, roundTimes, roundKills, gunStats, abilityStats, dataHMAC',
-            }
+          ? { error: 'Missing required fields', details: 'steamId and ticket are required' }
           : {},
         { status: 400 }
       );
     }
 
-    // Verify HMAC signature
-    const hmacValidation = verifyHMAC(body);
-    if (!hmacValidation.valid) {
-      logRequest({
-        ipAddress: ip,
-        steamId,
-        levelName: LEVEL_NAME,
-        difficulty: body.difficulty,
-        score,
-        rateLimited: false,
-        success: false,
-        requestResult: hmacValidation.reason || 'Invalid HMAC',
-      }).catch(() => {});
-      return NextResponse.json(
-        isDev ? { error: 'HMAC validation failed', reason: hmacValidation.reason } : {},
-        { status: 403 }
-      );
-    }
-
-    // Validate stats ranges and consistency
-    const statsValidation = validateStats(body);
-    if (!statsValidation.valid) {
-      logRequest({
-        ipAddress: ip,
-        steamId,
-        levelName: LEVEL_NAME,
-        difficulty: body.difficulty,
-        score,
-        rateLimited: false,
-        success: false,
-        requestResult: statsValidation.reason || 'Invalid stats',
-      }).catch(() => {});
-      return NextResponse.json(
-        isDev ? { error: 'Stats validation failed', reason: statsValidation.reason } : {},
-        { status: 403 }
-      );
-    }
-
+    // 3. Steam ticket validation
     const ticketValidation = await validateSteamTicket(steamId, ticket);
     if (!ticketValidation.valid) {
       logRequest({
@@ -162,6 +155,7 @@ export async function POST(req: Request) {
       );
     }
 
+    // 4. DB ban check
     const banned = await isSteamIdBanned(steamId);
     if (banned) {
       logRequest({
@@ -177,23 +171,74 @@ export async function POST(req: Request) {
       return NextResponse.json(isDev ? { error: 'Steam ID is banned' } : {}, { status: 403 });
     }
 
-    const limiterKey = steamId ? `steam:${steamId}` : `ip:${ip}`;
-
-    const rateLimitedData = await checkRateLimit(limiterKey);
-    if (rateLimitedData.limited) {
+    // 5. Validate all data fields (auto-ban - legitimate client always sends complete data)
+    if (
+      score == null ||
+      !body.difficulty ||
+      !body.roundTimes ||
+      !body.roundKills ||
+      !body.gunStats ||
+      !body.abilityStats ||
+      !body.dataHMAC
+    ) {
+      await banSteamId(steamId, ip, 'Missing data fields (tampered client)');
       logRequest({
         ipAddress: ip,
         steamId,
         levelName: LEVEL_NAME,
         difficulty: body.difficulty,
         score,
-        rateLimited: true,
+        rateLimited: false,
         success: false,
-        requestResult: 'Rate limited',
+        requestResult: 'Missing parameters - AUTO BAN',
       }).catch(() => {});
       return NextResponse.json(
-        isDev ? { error: 'Rate limited', retryAfter: rateLimitedData.retryAfter } : {},
-        { status: 429 }
+        isDev
+          ? {
+              error: 'Missing parameters',
+              details:
+                'Required: finalScore, difficulty, roundTimes, roundKills, gunStats, abilityStats, dataHMAC',
+            }
+          : {},
+        { status: 400 }
+      );
+    }
+
+    // 6. Verify HMAC signature
+    const hmacValidation = verifyHMAC(body);
+    if (!hmacValidation.valid) {
+      logRequest({
+        ipAddress: ip,
+        steamId,
+        levelName: LEVEL_NAME,
+        difficulty: body.difficulty,
+        score,
+        rateLimited: false,
+        success: false,
+        requestResult: hmacValidation.reason || 'Invalid HMAC',
+      }).catch(() => {});
+      return NextResponse.json(
+        isDev ? { error: 'HMAC validation failed', reason: hmacValidation.reason } : {},
+        { status: 403 }
+      );
+    }
+
+    // 7. Validate stats ranges and consistency
+    const statsValidation = validateStats(body);
+    if (!statsValidation.valid) {
+      logRequest({
+        ipAddress: ip,
+        steamId,
+        levelName: LEVEL_NAME,
+        difficulty: body.difficulty,
+        score,
+        rateLimited: false,
+        success: false,
+        requestResult: statsValidation.reason || 'Invalid stats',
+      }).catch(() => {});
+      return NextResponse.json(
+        isDev ? { error: 'Stats validation failed', reason: statsValidation.reason } : {},
+        { status: 403 }
       );
     }
 
@@ -214,7 +259,7 @@ export async function POST(req: Request) {
       steamid: steamId,
       score: score.toString(),
       scoremethod: Constants.STEAM_API_SCORE_METHOD_KEEP_BEST,
-      'details[0]': details.join(','), // Steam API accepts comma-separated details
+      'details[0]': details.join(','),
     });
 
     const url = `https://partner.steam-api.com/ISteamLeaderboards/SetLeaderboardScore/v1/`;
@@ -292,7 +337,6 @@ async function validateSteamTicket(
 
     const authRes = await fetch(`${authUrl}?${params.toString()}`);
     const authData = await authRes.json();
-    console.log('Steam ticket auth response:', authData);
 
     if (authData.response?.error) {
       return { valid: false, reason: 'Invalid ticket' };
@@ -335,13 +379,6 @@ function verifyHMAC(submission: StatsSubmission): { valid: boolean; reason?: str
     });
 
     const computedHMAC = crypto.createHmac('sha256', secret).update(canonicalData).digest('hex');
-
-    console.log('=== HMAC DEBUG ===');
-    console.log('Canonical data:', canonicalData);
-    console.log('Secret (first 8 chars):', secret.substring(0, 8));
-    console.log('Computed HMAC:', computedHMAC);
-    console.log('Received HMAC:', submission.dataHMAC.toLowerCase());
-    console.log('Match:', computedHMAC === submission.dataHMAC.toLowerCase());
 
     if (computedHMAC !== submission.dataHMAC.toLowerCase()) {
       return { valid: false, reason: 'HMAC mismatch' };
@@ -447,6 +484,10 @@ function validateStats(submission: StatsSubmission): { valid: boolean; reason?: 
 
   if (totalDamage > MAX_TOTAL_DAMAGE) {
     return { valid: false, reason: `Total damage exceeds maximum: ${totalDamage}` };
+  }
+
+  if (totalDamage < MIN_TOTAL_DAMAGE) {
+    return { valid: false, reason: `Total damage below minimum: ${totalDamage}` };
   }
 
   // Validate ability stats
