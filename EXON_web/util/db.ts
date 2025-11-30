@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { Constants } from './constants';
 
 // Singleton connection pool for serverless (reused across invocations)
 let pool: Pool | null = null;
@@ -40,6 +41,7 @@ export async function isSteamIdBanned(steamId: string): Promise<boolean> {
 
 /**
  * Ban a Steam ID and log the associated IP address
+ * Also removes the Steam ID from all leaderboards
  */
 export async function banSteamId(
   steamId: string,
@@ -58,8 +60,62 @@ export async function banSteamId(
 
     console.log(`🚫 AUTO-BAN: Steam ID ${steamId} | IP ${ipAddress} | Reason: ${reason}`);
     console.log(`   Add to Netlify IP Blacklist: ${ipAddress}`);
+
+    // Remove from all leaderboards
+    await removeFromAllLeaderboards(steamId);
   } catch (error) {
     console.error('Error banning Steam ID:', error);
+  }
+}
+
+/**
+ * Remove a Steam ID from all difficulty leaderboards
+ */
+async function removeFromAllLeaderboards(steamId: string): Promise<void> {
+  const leaderboardIds = [
+    process.env[Constants.LEADERBOARD_DEMO_EASY_ID],
+    process.env[Constants.LEADERBOARD_DEMO_MEDIUM_ID],
+    process.env[Constants.LEADERBOARD_DEMO_HARD_ID],
+    process.env[Constants.LEADERBOARD_DEMO_VERY_HARD_ID],
+  ];
+
+  const apiKey = process.env[Constants.STEAM_WEB_API_KEY];
+  const appId = process.env[Constants.APP_ID_DEMO];
+
+  if (!apiKey || !appId) {
+    console.error('Missing Steam API credentials for leaderboard cleanup');
+    return;
+  }
+
+  for (const leaderboardId of leaderboardIds) {
+    if (!leaderboardId) continue;
+
+    try {
+      const params = new URLSearchParams({
+        key: apiKey,
+        appid: appId,
+        leaderboardid: leaderboardId,
+        steamid: steamId,
+      });
+
+      const url = `https://partner.steam-api.com/ISteamLeaderboards/DeleteLeaderboardScore/v1/`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        },
+        body: params.toString(),
+      });
+
+      if (response.ok) {
+        console.log(`   ✓ Removed from leaderboard ${leaderboardId}`);
+      } else {
+        const errorText = await response.text();
+        console.error(`   ✗ Failed to remove from leaderboard ${leaderboardId}: ${errorText}`);
+      }
+    } catch (error) {
+      console.error(`   ✗ Error removing from leaderboard ${leaderboardId}:`, error);
+    }
   }
 }
 
