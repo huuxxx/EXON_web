@@ -10,6 +10,7 @@ export class Constants {
   static readonly LEADERBOARD_DEMO_MEDIUM_ID = 'LEADERBOARD_DEMO_MEDIUM_ID';
   static readonly LEADERBOARD_DEMO_HARD_ID = 'LEADERBOARD_DEMO_HARD_ID';
   static readonly LEADERBOARD_DEMO_VERY_HARD_ID = 'LEADERBOARD_DEMO_VERY_HARD_ID';
+  static readonly ENABLE_DETAILED_RESPONSE = 'ENABLE_DETAILED_RESPONSE';
 
   // Steam API constants
   static readonly STEAM_API_SCORE_METHOD_KEEP_BEST = 'KeepBest';

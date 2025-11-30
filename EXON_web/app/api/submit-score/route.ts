@@ -44,7 +44,9 @@ const EXPECTED_GUN_COUNT = 5;
 const EXPECTED_ABILITY_COUNT = 6; // blast, blade, barrier, combustion, jump, warp
 const SPAWN_DURATION_MS = 2300; // Time for enemy to fully spawn
 const LEVEL_NAME = 'demo'; // Current level name
-const isDev = process.env.NODE_ENV === 'development';
+const showDetailedResponse =
+  process.env.NODE_ENV === 'development' ||
+  process.env[Constants.ENABLE_DETAILED_RESPONSE] === 'true';
 
 // Round spawn data: [totalMonsters, mutants, lastSpawnRequestTime (seconds)]
 const ROUND_SPAWN_DATA = [
@@ -90,7 +92,7 @@ export async function POST(req: Request) {
         requestResult: 'Rate limited (IP)',
       }).catch(() => {});
       return NextResponse.json(
-        isDev ? { error: 'Rate limited', retryAfter: ipRateLimited.retryAfter } : {},
+        showDetailedResponse ? { error: 'Rate limited', retryAfter: ipRateLimited.retryAfter } : {},
         { status: 429 }
       );
     }
@@ -108,7 +110,9 @@ export async function POST(req: Request) {
         requestResult: 'Rate limited (Steam ID)',
       }).catch(() => {});
       return NextResponse.json(
-        isDev ? { error: 'Rate limited', retryAfter: steamRateLimited.retryAfter } : {},
+        showDetailedResponse
+          ? { error: 'Rate limited', retryAfter: steamRateLimited.retryAfter }
+          : {},
         { status: 429 }
       );
     }
@@ -129,7 +133,7 @@ export async function POST(req: Request) {
         requestResult: 'Missing steamId or ticket - AUTO BAN',
       }).catch(() => {});
       return NextResponse.json(
-        isDev
+        showDetailedResponse
           ? { error: 'Missing required fields', details: 'steamId and ticket are required' }
           : {},
         { status: 400 }
@@ -139,18 +143,29 @@ export async function POST(req: Request) {
     // 3. Steam ticket validation
     const ticketValidation = await validateSteamTicket(steamId, ticket);
     if (!ticketValidation.valid) {
-      logRequest({
-        ipAddress: ip,
-        steamId,
-        levelName: LEVEL_NAME,
-        difficulty: body.difficulty,
-        score,
-        rateLimited: false,
-        success: false,
-        requestResult: ticketValidation.reason || 'Invalid ticket',
-      }).catch(() => {});
+      let dbError = null;
+      try {
+        await logRequest({
+          ipAddress: ip,
+          steamId,
+          levelName: LEVEL_NAME,
+          difficulty: body.difficulty,
+          score,
+          rateLimited: false,
+          success: false,
+          requestResult: ticketValidation.reason || 'Invalid ticket',
+        });
+      } catch (err: any) {
+        dbError = err.message;
+      }
       return NextResponse.json(
-        isDev ? { error: 'Steam ticket validation failed', reason: ticketValidation.reason } : {},
+        showDetailedResponse
+          ? {
+              error: 'Steam ticket validation failed',
+              reason: ticketValidation.reason,
+              ...(dbError && { dbLogError: dbError }),
+            }
+          : {},
         { status: 403 }
       );
     }
@@ -168,7 +183,9 @@ export async function POST(req: Request) {
         success: false,
         requestResult: 'Banned Steam ID',
       }).catch(() => {});
-      return NextResponse.json(isDev ? { error: 'Steam ID is banned' } : {}, { status: 403 });
+      return NextResponse.json(showDetailedResponse ? { error: 'Steam ID is banned' } : {}, {
+        status: 403,
+      });
     }
 
     // 5. Validate all data fields (auto-ban - legitimate client always sends complete data)
@@ -193,7 +210,7 @@ export async function POST(req: Request) {
         requestResult: 'Missing parameters - AUTO BAN',
       }).catch(() => {});
       return NextResponse.json(
-        isDev
+        showDetailedResponse
           ? {
               error: 'Missing parameters',
               details:
@@ -218,7 +235,9 @@ export async function POST(req: Request) {
         requestResult: hmacValidation.reason || 'Invalid HMAC',
       }).catch(() => {});
       return NextResponse.json(
-        isDev ? { error: 'HMAC validation failed', reason: hmacValidation.reason } : {},
+        showDetailedResponse
+          ? { error: 'HMAC validation failed', reason: hmacValidation.reason }
+          : {},
         { status: 403 }
       );
     }
@@ -237,7 +256,9 @@ export async function POST(req: Request) {
         requestResult: statsValidation.reason || 'Invalid stats',
       }).catch(() => {});
       return NextResponse.json(
-        isDev ? { error: 'Stats validation failed', reason: statsValidation.reason } : {},
+        showDetailedResponse
+          ? { error: 'Stats validation failed', reason: statsValidation.reason }
+          : {},
         { status: 403 }
       );
     }
@@ -300,9 +321,12 @@ export async function POST(req: Request) {
       success: false,
       requestResult: 'Parse error',
     }).catch(() => {});
-    return NextResponse.json(isDev ? { error: 'Parse error', details: err.message } : {}, {
-      status: 400,
-    });
+    return NextResponse.json(
+      showDetailedResponse ? { error: 'Parse error', details: err.message } : {},
+      {
+        status: 400,
+      }
+    );
   }
 }
 
