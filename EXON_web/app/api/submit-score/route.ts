@@ -289,7 +289,7 @@ export async function POST(req: Request) {
       steamid: steamId,
       score: score.toString(),
       scoremethod: Constants.STEAM_API_SCORE_METHOD_KEEP_BEST,
-      'details[0]': details.join(','),
+      details: JSON.stringify(details),
     });
 
     const url = `https://partner.steam-api.com/ISteamLeaderboards/SetLeaderboardScore/v1/`;
@@ -326,7 +326,16 @@ export async function POST(req: Request) {
       requestResult: success ? 'Success' : 'Steam API error',
     }).catch(() => {});
 
-    return NextResponse.json({ json }, { status: 200 });
+    const leaderboardEntry = json?.result;
+    const response: any = { success };
+
+    if (leaderboardEntry) {
+      response.scoreChanged = leaderboardEntry.score_changed || false;
+      response.globalRankPrevious = leaderboardEntry.global_rank_previous || 0;
+      response.globalRankNew = leaderboardEntry.global_rank_new || 0;
+    }
+
+    return NextResponse.json(response, { status: 200 });
   } catch (err: any) {
     console.log(`❌ Parse error: ${steamId || 'unknown'} | IP: ${ip} | Error: ${err.message}`);
     await logRequest({
