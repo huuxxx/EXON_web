@@ -37,6 +37,8 @@ export async function isSteamIdBanned(steamId: string): Promise<boolean> {
 export async function logRequest(data: {
   ipAddress: string;
   steamId?: string;
+  levelName?: string;
+  difficulty?: string;
   score?: number;
   rateLimited: boolean;
   success: boolean;
@@ -45,11 +47,13 @@ export async function logRequest(data: {
   try {
     const pool = getPool();
     await pool.query(
-      `INSERT INTO request_logs (ip_address, steam_id, score, rate_limited, success, request_result)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+      `INSERT INTO request_logs (ip_address, steam_id, level_name, difficulty, score, rate_limited, success, request_result)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [
         data.ipAddress,
         data.steamId || null,
+        data.levelName || null,
+        data.difficulty || null,
         data.score || null,
         data.rateLimited,
         data.success,

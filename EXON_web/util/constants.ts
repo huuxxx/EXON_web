@@ -7,6 +7,10 @@ export class Constants {
   static readonly APP_ID_FULL = 'APP_ID_FULL';
   static readonly LEADERBOARD_NAME = 'LEADERBOARD_NAME';
   static readonly LEADERBOARD_TEST_ID = 'LEADERBOARD_TEST_ID';
+  static readonly LEADERBOARD_DEMO_EASY_ID = 'LEADERBOARD_DEMO_EASY_ID';
+  static readonly LEADERBOARD_DEMO_MEDIUM_ID = 'LEADERBOARD_DEMO_MEDIUM_ID';
+  static readonly LEADERBOARD_DEMO_HARD_ID = 'LEADERBOARD_DEMO_HARD_ID';
+  static readonly LEADERBOARD_DEMO_VERY_HARD_ID = 'LEADERBOARD_DEMO_VERY_HARD_ID';
 
   // Steam API constants
   static readonly STEAM_API_SCORE_METHOD_KEEP_BEST = 'KeepBest';
