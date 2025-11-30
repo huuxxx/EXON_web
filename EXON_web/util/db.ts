@@ -6,7 +6,14 @@ let pool: Pool | null = null;
 function getPool(): Pool {
   if (!pool) {
     pool = new Pool({
-      connectionString: process.env.POSTGRES_CONNECTION_STRING,
+      host: process.env.POSTGRES_HOST,
+      port: parseInt(process.env.POSTGRES_PORT || '5432'),
+      database: process.env.POSTGRES_DATABASE,
+      user: process.env.POSTGRES_USER,
+      password: process.env.POSTGRES_PASSWORD,
+      ssl: {
+        rejectUnauthorized: false, // AWS RDS uses self-signed certificates
+      },
       max: 2, // Low max for serverless to avoid connection exhaustion
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000,

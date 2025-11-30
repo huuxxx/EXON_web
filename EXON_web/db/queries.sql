@@ -115,7 +115,7 @@ FROM request_logs
 WHERE steam_id IS NOT NULL
 GROUP BY steam_id
 HAVING COUNT(CASE WHEN rate_limited THEN 1 END) >= 10  -- 10+ rate-limit violations
-   OR MIN(score) < 10  -- Impossibly fast times
+   OR MIN(score) < 184000  -- Impossibly fast times | 184 seconds = all enemies died instantly
 ORDER BY rate_limited_count DESC, best_score ASC;
 
 -- 8. Ban a Steam ID (after manual review)

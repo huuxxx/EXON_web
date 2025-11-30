@@ -42,7 +42,8 @@ const EXPECTED_ROUND_COUNT = 10;
 const EXPECTED_GUN_COUNT = 5;
 const EXPECTED_ABILITY_COUNT = 6; // blast, blade, barrier, combustion, jump, warp
 const SPAWN_DURATION_MS = 2300; // Time for enemy to fully spawn
-const LEVEL_NAME = 'Demo'; // Current level name
+const LEVEL_NAME = 'demo'; // Current level name
+const isDev = process.env.NODE_ENV === 'development';
 
 // Round spawn data: [totalMonsters, mutants, lastSpawnRequestTime (seconds)]
 const ROUND_SPAWN_DATA = [
@@ -93,7 +94,16 @@ export async function POST(req: Request) {
         success: false,
         requestResult: 'Missing parameters',
       }).catch(() => {});
-      return NextResponse.json({}, { status: 400 });
+      return NextResponse.json(
+        isDev
+          ? {
+              error: 'Missing parameters',
+              details:
+                'Required: steamId, ticket, difficulty, roundTimes, roundKills, gunStats, abilityStats, dataHMAC',
+            }
+          : {},
+        { status: 400 }
+      );
     }
 
     // Verify HMAC signature
@@ -109,7 +119,10 @@ export async function POST(req: Request) {
         success: false,
         requestResult: hmacValidation.reason || 'Invalid HMAC',
       }).catch(() => {});
-      return NextResponse.json({}, { status: 403 });
+      return NextResponse.json(
+        isDev ? { error: 'HMAC validation failed', reason: hmacValidation.reason } : {},
+        { status: 403 }
+      );
     }
 
     // Validate stats ranges and consistency
@@ -125,7 +138,10 @@ export async function POST(req: Request) {
         success: false,
         requestResult: statsValidation.reason || 'Invalid stats',
       }).catch(() => {});
-      return NextResponse.json({}, { status: 403 });
+      return NextResponse.json(
+        isDev ? { error: 'Stats validation failed', reason: statsValidation.reason } : {},
+        { status: 403 }
+      );
     }
 
     const ticketValidation = await validateSteamTicket(steamId, ticket);
@@ -140,7 +156,10 @@ export async function POST(req: Request) {
         success: false,
         requestResult: ticketValidation.reason || 'Invalid ticket',
       }).catch(() => {});
-      return NextResponse.json({}, { status: 403 });
+      return NextResponse.json(
+        isDev ? { error: 'Steam ticket validation failed', reason: ticketValidation.reason } : {},
+        { status: 403 }
+      );
     }
 
     const banned = await isSteamIdBanned(steamId);
@@ -155,7 +174,7 @@ export async function POST(req: Request) {
         success: false,
         requestResult: 'Banned Steam ID',
       }).catch(() => {});
-      return NextResponse.json({}, { status: 403 });
+      return NextResponse.json(isDev ? { error: 'Steam ID is banned' } : {}, { status: 403 });
     }
 
     const limiterKey = steamId ? `steam:${steamId}` : `ip:${ip}`;
@@ -172,7 +191,10 @@ export async function POST(req: Request) {
         success: false,
         requestResult: 'Rate limited',
       }).catch(() => {});
-      return NextResponse.json({}, { status: 429 });
+      return NextResponse.json(
+        isDev ? { error: 'Rate limited', retryAfter: rateLimitedData.retryAfter } : {},
+        { status: 429 }
+      );
     }
 
     // Pack stats into Steam metadata array
@@ -233,7 +255,9 @@ export async function POST(req: Request) {
       success: false,
       requestResult: 'Parse error',
     }).catch(() => {});
-    return NextResponse.json({}, { status: 400 });
+    return NextResponse.json(isDev ? { error: 'Parse error', details: err.message } : {}, {
+      status: 400,
+    });
   }
 }
 
@@ -311,6 +335,13 @@ function verifyHMAC(submission: StatsSubmission): { valid: boolean; reason?: str
     });
 
     const computedHMAC = crypto.createHmac('sha256', secret).update(canonicalData).digest('hex');
+
+    console.log('=== HMAC DEBUG ===');
+    console.log('Canonical data:', canonicalData);
+    console.log('Secret (first 8 chars):', secret.substring(0, 8));
+    console.log('Computed HMAC:', computedHMAC);
+    console.log('Received HMAC:', submission.dataHMAC.toLowerCase());
+    console.log('Match:', computedHMAC === submission.dataHMAC.toLowerCase());
 
     if (computedHMAC !== submission.dataHMAC.toLowerCase()) {
       return { valid: false, reason: 'HMAC mismatch' };
