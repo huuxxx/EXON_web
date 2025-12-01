@@ -5,16 +5,19 @@ import { isSteamIdBanned, banSteamId, logRequest } from '@/util/db';
 import crypto from 'crypto';
 
 interface GunStats {
-  name: string; // pistol, shotgun, rifle, launcher, minigun
+  name: string; // pistol, shotgun, rifle, launcher, minigun, RESERVED1, RESERVED2, RESERVED3
   kills: number;
   damage: number;
+  acquisitions: number; // packed by client
 }
 
 interface AbilityStats {
-  name: string; // blast, blade, barrier, combustion, jump, warp
+  name: string; // blast, blade, barrier, combustion, RESERVED1
+  kills: number;
   uses: number;
-  utility: number; // nanite, healing, absorbed, kills, or 0 for jump/warp
-  kills: number; // kill count for all abilities
+  utility: number; // nanite, healing, absorbed, kills
+  damage: number;
+  acquisitions: number; // packed by client
 }
 
 interface StatsSubmission {
@@ -26,6 +29,9 @@ interface StatsSubmission {
   roundKills: number[]; // Kill count per round (length 10)
   gunStats: GunStats[];
   abilityStats: AbilityStats[];
+  warpAcquisitions: number; // packed by client
+  jumpAcquisitions: number; // packed by client
+  miscellaneousAcquisitions: number; // packed by client
   dataHMAC: string; // HMAC-SHA256 signature
 }
 
@@ -40,8 +46,8 @@ const MAX_TOTAL_KILLS = 275;
 const MAX_ABILITY_USES = 150;
 const MAX_UTILITY_STAT = 50000;
 const EXPECTED_ROUND_COUNT = 10;
-const EXPECTED_GUN_COUNT = 5;
-const EXPECTED_ABILITY_COUNT = 6; // blast, blade, barrier, combustion, jump, warp
+const EXPECTED_GUN_COUNT = 8; // Including 3 reserved slots
+const EXPECTED_ABILITY_COUNT = 5; // blast, blade, barrier, combustion, RESERVED1 (jump/warp/misc in acquisitions)
 const SPAWN_DURATION_MS = 2300; // Time for enemy to fully spawn
 const LEVEL_NAME = 'demo'; // Current level name
 const showDetailedResponse =
@@ -273,12 +279,18 @@ export async function POST(req: Request) {
     }
 
     // Pack stats into Steam metadata array
-    const details = packStatsToMetadata(
-      body.difficulty,
-      body.roundKills,
-      body.gunStats,
-      body.abilityStats
-    );
+    const details = packStatsToMetadata(body.gunStats, body.abilityStats);
+
+    // Add acquisition flags (indices 49-51)
+    details[49] = body.jumpAcquisitions;
+    details[50] = body.warpAcquisitions;
+    details[51] = body.miscellaneousAcquisitions;
+    // Indices 52-53 are reserved
+
+    // Add round timers (indices 54-63)
+    body.roundTimes.forEach((time, index) => {
+      details[54 + index] = time;
+    });
 
     const leaderboardId = getLeaderboardIdForDifficulty(body.difficulty);
 
@@ -605,59 +617,42 @@ function getLeaderboardIdForDifficulty(difficulty: string): string {
   return leaderboardMap[difficulty];
 }
 
-function packStatsToMetadata(
-  difficulty: string,
-  roundKills: number[],
-  gunStats: GunStats[],
-  abilityStats: AbilityStats[]
-): number[] {
+function packStatsToMetadata(gunStats: GunStats[], abilityStats: AbilityStats[]): number[] {
   const details = new Array(64).fill(0);
 
-  // Pack gun stats (slots 0-23: 12 guns × 2 stats)
-  const gunOrder = ['pistol', 'shotgun', 'rifle', 'launcher', 'minigun'];
+  // Pack gun stats: 8 guns × 3 fields = 24 slots (indices 0-23)
+  const gunOrder = [
+    'pistol',
+    'shotgun',
+    'rifle',
+    'launcher',
+    'minigun',
+    'reserved1',
+    'reserved2',
+    'reserved3',
+  ];
   gunOrder.forEach((gunName, index) => {
     const gun = gunStats.find((g) => g.name === gunName);
     if (gun) {
-      details[index * 2] = gun.kills;
-      details[index * 2 + 1] = gun.damage;
+      const offset = index * 3;
+      details[offset] = gun.kills;
+      details[offset + 1] = gun.damage;
+      details[offset + 2] = gun.acquisitions;
     }
   });
 
-  // Pack ability stats (slots 24-43: 10 abilities × 2 stats)
-  const abilityOrder = ['blast', 'blade', 'barrier', 'combustion', 'jump', 'warp'];
+  // Pack ability stats: 5 abilities × 5 fields = 25 slots (indices 24-48)
+  const abilityOrder = ['blast', 'blade', 'barrier', 'combustion', 'reserved1'];
   abilityOrder.forEach((abilityName, index) => {
     const ability = abilityStats.find((a) => a.name === abilityName);
     if (ability) {
-      details[24 + index * 2] = ability.uses;
-      details[24 + index * 2 + 1] = ability.utility;
+      const offset = 24 + index * 5;
+      details[offset] = ability.kills;
+      details[offset + 1] = ability.uses;
+      details[offset + 2] = ability.utility;
+      details[offset + 3] = ability.damage;
+      details[offset + 4] = ability.acquisitions;
     }
   });
-
-  // Pack summary stats (slots 44-47)
-  const totalKills = gunStats.reduce((sum, g) => sum + g.kills, 0);
-  const totalDamage = gunStats.reduce((sum, g) => sum + g.damage, 0);
-  const totalAbilityUses = abilityStats.reduce((sum, a) => sum + a.uses, 0);
-  const totalAbilityUtility = abilityStats.reduce((sum, a) => sum + a.utility, 0);
-
-  details[44] = totalKills;
-  details[45] = totalDamage;
-  details[46] = totalAbilityUses;
-  details[47] = totalAbilityUtility;
-
-  // Pack difficulty (slot 48): 0=easy, 1=medium, 2=hard, 3=veryHard
-  const difficultyMap: { [key: string]: number } = {
-    easy: 0,
-    medium: 1,
-    hard: 2,
-    veryHard: 3,
-  };
-  details[48] = difficultyMap[difficulty] ?? 0;
-
-  // Pack roundKills (slots 49-58: 10 rounds)
-  for (let i = 0; i < Math.min(roundKills.length, 10); i++) {
-    details[49 + i] = roundKills[i];
-  }
-
-  // Slots 59-63 remain unused for future expansion
   return details;
 }
