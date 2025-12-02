@@ -35,6 +35,13 @@ interface StatsSubmission {
   dataHMAC: string; // HMAC-SHA256 signature
 }
 
+interface SubmitScoreResult {
+  Success: boolean;
+  ScoreChanged: boolean;
+  PreviousRank: number;
+  NewRank: number;
+}
+
 const RATE_LIMIT_WINDOW_SEC = 600; // 10 minutes
 const MAX_SUBMISSIONS_PER_WINDOW = 3; // 3 full completions per 10 minutes
 const redis = Redis.fromEnv();
@@ -339,13 +346,12 @@ export async function POST(req: Request) {
     }).catch(() => {});
 
     const leaderboardEntry = json?.result;
-    const response: any = { success };
-
-    if (leaderboardEntry) {
-      response.scoreChanged = leaderboardEntry.score_changed || false;
-      response.globalRankPrevious = leaderboardEntry.global_rank_previous || 0;
-      response.globalRankNew = leaderboardEntry.global_rank_new || 0;
-    }
+    const response: SubmitScoreResult = {
+      Success: success,
+      ScoreChanged: leaderboardEntry?.score_changed || false,
+      PreviousRank: leaderboardEntry?.global_rank_previous || 0,
+      NewRank: leaderboardEntry?.global_rank_new || 0,
+    };
 
     return NextResponse.json(response, { status: 200 });
   } catch (err: any) {
