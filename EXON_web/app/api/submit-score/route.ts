@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { Constants } from '@/util/constants';
 import { Redis } from '@upstash/redis';
 import { isSteamIdBanned, banSteamId, logRequest } from '@/util/db';
-import crypto from 'crypto';
+import { verifyToken } from '@/app/api/auth/get-token/route';
+import { checkRateLimit, validateSteamTicket } from '@/util/auth';
 
 interface GunStats {
   name: string; // pistol, shotgun, rifle, launcher, minigun, RESERVED1, RESERVED2, RESERVED3
@@ -32,7 +33,7 @@ interface StatsSubmission {
   warpAcquisitions: number; // packed by client
   jumpAcquisitions: number; // packed by client
   miscellaneousAcquisitions: number; // packed by client
-  dataHMAC: string; // HMAC-SHA256 signature
+  token: string; // JWT token from /api/auth/get-token
 }
 
 interface SubmitScoreResult {
@@ -92,7 +93,11 @@ export async function POST(req: Request) {
     const ipLimiterKey = `ip:${ip}`;
     const steamLimiterKey = `steam:${steamId}`;
 
-    const ipRateLimited = await checkRateLimit(ipLimiterKey);
+    const ipRateLimited = await checkRateLimit(
+      ipLimiterKey,
+      RATE_LIMIT_WINDOW_SEC,
+      MAX_SUBMISSIONS_PER_WINDOW
+    );
     if (ipRateLimited.limited) {
       console.log(`🚫 Rate limited (IP): ${ip} | Steam ID: ${steamId || 'unknown'}`);
       await logRequest({
@@ -111,7 +116,11 @@ export async function POST(req: Request) {
       );
     }
 
-    const steamRateLimited = await checkRateLimit(steamLimiterKey);
+    const steamRateLimited = await checkRateLimit(
+      steamLimiterKey,
+      RATE_LIMIT_WINDOW_SEC,
+      MAX_SUBMISSIONS_PER_WINDOW
+    );
     if (steamRateLimited.limited) {
       console.log(`🚫 Rate limited (Steam ID): ${steamId} | IP: ${ip}`);
       await logRequest({
@@ -212,7 +221,7 @@ export async function POST(req: Request) {
       !body.roundKills ||
       !body.gunStats ||
       !body.abilityStats ||
-      !body.dataHMAC
+      !body.token
     ) {
       console.log(`🚫 AUTO-BAN: Missing data fields | Steam ID: ${steamId} | IP: ${ip}`);
       await banSteamId(steamId, ip, 'Missing data fields (tampered client)');
@@ -231,20 +240,20 @@ export async function POST(req: Request) {
           ? {
               error: 'Missing parameters',
               details:
-                'Required: finalScore, difficulty, roundTimes, roundKills, gunStats, abilityStats, dataHMAC',
+                'Required: finalScore, difficulty, roundTimes, roundKills, gunStats, abilityStats, token',
             }
           : {},
         { status: 400 }
       );
     }
 
-    // 6. Verify HMAC signature (auto-ban - legitimate client always sends valid HMAC)
-    const hmacValidation = verifyHMAC(body);
-    if (!hmacValidation.valid) {
+    // 6. Verify JWT token (auto-ban - legitimate client always sends valid token)
+    const tokenValidation = verifyToken(body.token);
+    if (!tokenValidation.valid) {
       console.log(
-        `🚫 AUTO-BAN: Invalid HMAC | Steam ID: ${steamId} | IP: ${ip} | Reason: ${hmacValidation.reason}`
+        `🚫 AUTO-BAN: Invalid token | Steam ID: ${steamId} | IP: ${ip} | Reason: ${tokenValidation.reason}`
       );
-      await banSteamId(steamId, ip, 'Invalid HMAC signature (tampered client)');
+      await banSteamId(steamId, ip, 'Invalid JWT token (tampered client)');
       await logRequest({
         ipAddress: ip,
         steamId,
@@ -253,15 +262,71 @@ export async function POST(req: Request) {
         score,
         rateLimited: false,
         success: false,
-        requestResult: hmacValidation.reason || 'Invalid HMAC - AUTO BAN',
+        requestResult: tokenValidation.reason || 'Invalid token - AUTO BAN',
       }).catch(() => {});
       return NextResponse.json(
         showDetailedResponse
-          ? { error: 'HMAC validation failed', reason: hmacValidation.reason }
+          ? { error: 'Token validation failed', reason: tokenValidation.reason }
           : {},
         { status: 403 }
       );
     }
+
+    // 6b. Verify token steamId matches submission steamId (auto-ban)
+    if (tokenValidation.payload?.steamId !== steamId) {
+      console.log(
+        `🚫 AUTO-BAN: Token/Steam ID mismatch | Token: ${tokenValidation.payload?.steamId} | Submission: ${steamId} | IP: ${ip}`
+      );
+      await banSteamId(steamId, ip, 'Token Steam ID mismatch (tampered client)');
+      await logRequest({
+        ipAddress: ip,
+        steamId,
+        levelName: LEVEL_NAME,
+        difficulty: body.difficulty,
+        score,
+        rateLimited: false,
+        success: false,
+        requestResult: 'Token Steam ID mismatch - AUTO BAN',
+      }).catch(() => {});
+      return NextResponse.json(
+        showDetailedResponse
+          ? { error: 'Token validation failed', reason: 'Steam ID mismatch' }
+          : {},
+        { status: 403 }
+      );
+    }
+
+    // 6c. Check token nonce hasn't been used (prevent replay attacks)
+    const nonce = tokenValidation.payload!.nonce;
+    const nonceKey = `token:nonce:${nonce}`;
+    const nonceExists = await redis.exists(nonceKey);
+
+    if (nonceExists) {
+      console.log(
+        `🚫 AUTO-BAN: Token replay attempt | Steam ID: ${steamId} | IP: ${ip} | Nonce: ${nonce}`
+      );
+      await banSteamId(steamId, ip, 'Token replay attack (tampered client)');
+      await logRequest({
+        ipAddress: ip,
+        steamId,
+        levelName: LEVEL_NAME,
+        difficulty: body.difficulty,
+        score,
+        rateLimited: false,
+        success: false,
+        requestResult: 'Token replay - AUTO BAN',
+      }).catch(() => {});
+      return NextResponse.json(
+        showDetailedResponse
+          ? { error: 'Token validation failed', reason: 'Token already used' }
+          : {},
+        { status: 403 }
+      );
+    }
+
+    // Mark token nonce as used (store until token expiry + buffer)
+    const tokenTTL = tokenValidation.payload!.exp - Math.floor(Date.now() / 1000) + 60; // +60s buffer
+    await redis.setex(nonceKey, tokenTTL, '1');
 
     // 7. Validate stats ranges and consistency
     const statsValidation = validateStats(body);
@@ -372,91 +437,6 @@ export async function POST(req: Request) {
         status: 400,
       }
     );
-  }
-}
-
-async function checkRateLimit(key: string): Promise<{ limited: boolean; retryAfter?: number }> {
-  const window = RATE_LIMIT_WINDOW_SEC;
-  const bucket = `rl:${key}:${Math.floor(Date.now() / 1000 / window)}`;
-
-  const count = await redis.incr(bucket);
-  if (count === 1) {
-    await redis.expire(bucket, window);
-  }
-
-  if (count > MAX_SUBMISSIONS_PER_WINDOW) {
-    const ttl = await redis.ttl(bucket);
-    return { limited: true, retryAfter: ttl > 0 ? ttl : window };
-  }
-
-  return { limited: false };
-}
-
-async function validateSteamTicket(
-  steamId: string,
-  ticket: string
-): Promise<{ valid: boolean; reason?: string }> {
-  try {
-    const authUrl = 'https://api.steampowered.com/ISteamUserAuth/AuthenticateUserTicket/v1/';
-    const params = new URLSearchParams({
-      key: process.env[Constants.STEAM_WEB_API_KEY]!,
-      appid: process.env[Constants.APP_ID_DEMO]!,
-      ticket: ticket,
-    });
-
-    const authRes = await fetch(`${authUrl}?${params.toString()}`);
-    const authData = await authRes.json();
-
-    if (authData.response?.error) {
-      return { valid: false, reason: 'Invalid ticket' };
-    }
-
-    const ticketSteamId = authData.response?.params?.steamid;
-    if (!ticketSteamId || ticketSteamId !== steamId) {
-      return { valid: false, reason: 'Steam ID mismatch' };
-    }
-
-    const ownerSteamId = authData.response?.params?.ownersteamid;
-    if (ownerSteamId && ownerSteamId !== steamId) {
-      return { valid: false, reason: 'Not app owner' };
-    }
-
-    return { valid: true };
-  } catch (error) {
-    console.error('Steam ticket validation error:', error);
-    return { valid: false, reason: 'Validation failed' };
-  }
-}
-
-function verifyHMAC(submission: StatsSubmission): { valid: boolean; reason?: string } {
-  try {
-    const secret = process.env.STATS_SECRET_KEY;
-    if (!secret) {
-      console.error('STATS_SECRET_KEY not configured');
-      return { valid: false, reason: 'Server configuration error' };
-    }
-
-    // Create canonical data string (must match C# client order)
-    const canonicalData = JSON.stringify({
-      steamId: submission.steamId,
-      difficulty: submission.difficulty,
-      finalScore: submission.finalScore,
-      roundTimes: submission.roundTimes,
-      roundKills: submission.roundKills,
-      gunStats: submission.gunStats,
-      abilityStats: submission.abilityStats,
-    });
-
-    const computedHMAC = crypto.createHmac('sha256', secret).update(canonicalData).digest('hex');
-
-    if (computedHMAC !== submission.dataHMAC.toLowerCase()) {
-      return { valid: false, reason: 'HMAC mismatch' };
-    }
-
-    return { valid: true };
-  } catch (error) {
-    console.error('HMAC verification error:', error);
-    return { valid: false, reason: 'HMAC verification failed' };
   }
 }
 
