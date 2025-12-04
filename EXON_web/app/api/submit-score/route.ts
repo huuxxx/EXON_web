@@ -78,7 +78,7 @@ const ROUND_SPAWN_DATA = [
 
 export async function POST(req: Request) {
   const forwarded = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip');
-  const ip = forwarded ? forwarded.split(',')[0].trim() : 'unknown';
+  const ipAddress = forwarded ? forwarded.split(',')[0].trim() : 'unknown';
   let steamId: string | undefined;
   let score: number | undefined;
   let success = false;
@@ -90,7 +90,7 @@ export async function POST(req: Request) {
     const ticket = body.ticket;
 
     // 1. Rate limit check - IP and Steam ID
-    const ipLimiterKey = `ip:${ip}`;
+    const ipLimiterKey = `ip:${ipAddress}`;
     const steamLimiterKey = `steam:${steamId}`;
 
     const ipRateLimited = await checkRateLimit(
@@ -99,9 +99,9 @@ export async function POST(req: Request) {
       MAX_SUBMISSIONS_PER_WINDOW
     );
     if (ipRateLimited.limited) {
-      console.log(`🚫 Rate limited (IP): ${ip} | Steam ID: ${steamId || 'unknown'}`);
+      console.log(`🚫 Rate limited (IP): ${ipAddress} | Steam ID: ${steamId || 'unknown'}`);
       await logRequest({
-        ipAddress: ip,
+        ipAddress: ipAddress,
         steamId,
         levelName: LEVEL_NAME,
         difficulty: body.difficulty,
@@ -122,9 +122,9 @@ export async function POST(req: Request) {
       MAX_SUBMISSIONS_PER_WINDOW
     );
     if (steamRateLimited.limited) {
-      console.log(`🚫 Rate limited (Steam ID): ${steamId} | IP: ${ip}`);
+      console.log(`🚫 Rate limited (Steam ID): ${steamId} | IP: ${ipAddress}`);
       await logRequest({
-        ipAddress: ip,
+        ipAddress: ipAddress,
         steamId,
         levelName: LEVEL_NAME,
         difficulty: body.difficulty,
@@ -144,13 +144,13 @@ export async function POST(req: Request) {
     // 2. Essential validation (auto-ban - legitimate client always sends these)
     if (!steamId || !ticket) {
       console.log(
-        `🚫 AUTO-BAN: Missing required fields | Steam ID: ${steamId || 'unknown'} | IP: ${ip}`
+        `🚫 AUTO-BAN: Missing required fields | Steam ID: ${steamId || 'unknown'} | IP: ${ipAddress}`
       );
       if (steamId) {
-        await banSteamId(steamId, ip, 'Missing required fields (tampered client)');
+        await banSteamId(steamId, ipAddress, 'Missing required fields (tampered client)');
       }
       await logRequest({
-        ipAddress: ip,
+        ipAddress: ipAddress,
         steamId,
         levelName: LEVEL_NAME,
         difficulty: body.difficulty,
@@ -171,10 +171,10 @@ export async function POST(req: Request) {
     const ticketValidation = await validateSteamTicket(steamId, ticket);
     if (!ticketValidation.valid) {
       console.log(
-        `🚫 Invalid Steam ticket: ${steamId} | IP: ${ip} | Reason: ${ticketValidation.reason}`
+        `🚫 Invalid Steam ticket: ${steamId} | IP: ${ipAddress} | Reason: ${ticketValidation.reason}`
       );
       await logRequest({
-        ipAddress: ip,
+        ipAddress: ipAddress,
         steamId,
         levelName: LEVEL_NAME,
         difficulty: body.difficulty,
@@ -197,9 +197,9 @@ export async function POST(req: Request) {
     // 4. DB ban check
     const banned = await isSteamIdBanned(steamId);
     if (banned) {
-      console.log(`🚫 Banned user attempted access: ${steamId} | IP: ${ip}`);
+      console.log(`🚫 Banned user attempted access: ${steamId} | IP: ${ipAddress}`);
       await logRequest({
-        ipAddress: ip,
+        ipAddress: ipAddress,
         steamId,
         levelName: LEVEL_NAME,
         difficulty: body.difficulty,
@@ -223,10 +223,10 @@ export async function POST(req: Request) {
       !body.abilityStats ||
       !body.token
     ) {
-      console.log(`🚫 AUTO-BAN: Missing data fields | Steam ID: ${steamId} | IP: ${ip}`);
-      await banSteamId(steamId, ip, 'Missing data fields (tampered client)');
+      console.log(`🚫 AUTO-BAN: Missing data fields | Steam ID: ${steamId} | IP: ${ipAddress}`);
+      await banSteamId(steamId, ipAddress, 'Missing data fields (tampered client)');
       await logRequest({
-        ipAddress: ip,
+        ipAddress: ipAddress,
         steamId,
         levelName: LEVEL_NAME,
         difficulty: body.difficulty,
@@ -251,11 +251,11 @@ export async function POST(req: Request) {
     const tokenValidation = verifyToken(body.token);
     if (!tokenValidation.valid) {
       console.log(
-        `🚫 AUTO-BAN: Invalid token | Steam ID: ${steamId} | IP: ${ip} | Reason: ${tokenValidation.reason}`
+        `🚫 AUTO-BAN: Invalid token | Steam ID: ${steamId} | IP: ${ipAddress} | Reason: ${tokenValidation.reason}`
       );
-      await banSteamId(steamId, ip, 'Invalid JWT token (tampered client)');
+      await banSteamId(steamId, ipAddress, 'Invalid JWT token (tampered client)');
       await logRequest({
-        ipAddress: ip,
+        ipAddress: ipAddress,
         steamId,
         levelName: LEVEL_NAME,
         difficulty: body.difficulty,
@@ -275,11 +275,11 @@ export async function POST(req: Request) {
     // 6b. Verify token steamId matches submission steamId (auto-ban)
     if (tokenValidation.payload?.steamId !== steamId) {
       console.log(
-        `🚫 AUTO-BAN: Token/Steam ID mismatch | Token: ${tokenValidation.payload?.steamId} | Submission: ${steamId} | IP: ${ip}`
+        `🚫 AUTO-BAN: Token/Steam ID mismatch | Token: ${tokenValidation.payload?.steamId} | Submission: ${steamId} | IP: ${ipAddress}`
       );
-      await banSteamId(steamId, ip, 'Token Steam ID mismatch (tampered client)');
+      await banSteamId(steamId, ipAddress, 'Token Steam ID mismatch (tampered client)');
       await logRequest({
-        ipAddress: ip,
+        ipAddress: ipAddress,
         steamId,
         levelName: LEVEL_NAME,
         difficulty: body.difficulty,
@@ -303,11 +303,11 @@ export async function POST(req: Request) {
 
     if (nonceExists) {
       console.log(
-        `🚫 AUTO-BAN: Token replay attempt | Steam ID: ${steamId} | IP: ${ip} | Nonce: ${nonce}`
+        `🚫 AUTO-BAN: Token replay attempt | Steam ID: ${steamId} | IP: ${ipAddress} | Nonce: ${nonce}`
       );
-      await banSteamId(steamId, ip, 'Token replay attack (tampered client)');
+      await banSteamId(steamId, ipAddress, 'Token replay attack (tampered client)');
       await logRequest({
-        ipAddress: ip,
+        ipAddress: ipAddress,
         steamId,
         levelName: LEVEL_NAME,
         difficulty: body.difficulty,
@@ -331,9 +331,11 @@ export async function POST(req: Request) {
     // 7. Validate stats ranges and consistency
     const statsValidation = validateStats(body);
     if (!statsValidation.valid) {
-      console.log(`🚫 Invalid stats: ${steamId} | IP: ${ip} | Reason: ${statsValidation.reason}`);
+      console.log(
+        `🚫 Invalid stats: ${steamId} | IP: ${ipAddress} | Reason: ${statsValidation.reason}`
+      );
       await logRequest({
-        ipAddress: ip,
+        ipAddress: ipAddress,
         steamId,
         levelName: LEVEL_NAME,
         difficulty: body.difficulty,
@@ -392,15 +394,15 @@ export async function POST(req: Request) {
 
     if (success) {
       console.log(
-        `✅ Successful submission: ${steamId} | IP: ${ip} | Difficulty: ${body.difficulty} | Score: ${score}ms`
+        `✅ Successful submission: ${steamId} | IP: ${ipAddress} | Difficulty: ${body.difficulty} | Score: ${score}ms`
       );
     } else {
-      console.log(`❌ Steam API error: ${steamId} | IP: ${ip}`);
+      console.log(`❌ Steam API error: ${steamId} | IP: ${ipAddress}`);
     }
     console.log('submit-score Steam response: ', json ?? raw);
 
     await logRequest({
-      ipAddress: ip,
+      ipAddress: ipAddress,
       steamId,
       levelName: LEVEL_NAME,
       difficulty: body.difficulty,
@@ -420,9 +422,11 @@ export async function POST(req: Request) {
 
     return NextResponse.json(response, { status: 200 });
   } catch (err: any) {
-    console.log(`❌ Parse error: ${steamId || 'unknown'} | IP: ${ip} | Error: ${err.message}`);
+    console.log(
+      `❌ Parse error: ${steamId || 'unknown'} | IP: ${ipAddress} | Error: ${err.message}`
+    );
     await logRequest({
-      ipAddress: ip,
+      ipAddress: ipAddress,
       steamId: steamId,
       levelName: LEVEL_NAME,
       difficulty: undefined,

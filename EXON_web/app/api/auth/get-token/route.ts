@@ -27,14 +27,14 @@ const showDetailedResponse =
 
 export async function POST(req: Request) {
   const forwarded = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip');
-  const ip = forwarded ? forwarded.split(',')[0].trim() : 'unknown';
+  const ipAddress = forwarded ? forwarded.split(',')[0].trim() : 'unknown';
 
   try {
     const body: TokenRequest = await req.json();
     const { steamId, ticket } = body;
 
     // 1. Rate limit check - IP and Steam ID
-    const ipLimiterKey = `token:ip:${ip}`;
+    const ipLimiterKey = `token:ip:${ipAddress}`;
     const steamLimiterKey = `token:steam:${steamId}`;
 
     const ipRateLimited = await checkRateLimit(
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
       MAX_TOKEN_REQUESTS_PER_WINDOW
     );
     if (ipRateLimited.limited) {
-      console.log(`🚫 Token rate limited (IP): ${ip} | Steam ID: ${steamId || 'unknown'}`);
+      console.log(`🚫 Token rate limited (IP): ${ipAddress} | Steam ID: ${steamId || 'unknown'}`);
       return NextResponse.json(
         showDetailedResponse ? { error: 'Rate limited', retryAfter: ipRateLimited.retryAfter } : {},
         { status: 429 }
@@ -56,7 +56,7 @@ export async function POST(req: Request) {
       MAX_TOKEN_REQUESTS_PER_WINDOW
     );
     if (steamRateLimited.limited) {
-      console.log(`🚫 Token rate limited (Steam ID): ${steamId} | IP: ${ip}`);
+      console.log(`🚫 Token rate limited (Steam ID): ${steamId} | IP: ${ipAddress}`);
       return NextResponse.json(
         showDetailedResponse
           ? { error: 'Rate limited', retryAfter: steamRateLimited.retryAfter }
@@ -65,10 +65,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2. Validate required fields (auto-ban - legitimate client always sends these)
+    // 2. Validate required fields
     if (!steamId || !ticket) {
-      console.log(`🚫 AUTO-BAN: Token request missing fields | IP: ${ip}`);
-      // Can't ban without steamId, but log the attempt
       return NextResponse.json(
         showDetailedResponse
           ? { error: 'Missing required fields', details: 'steamId and ticket are required' }
@@ -80,7 +78,7 @@ export async function POST(req: Request) {
     // 3. DB ban check
     const banned = await isSteamIdBanned(steamId);
     if (banned) {
-      console.log(`🚫 Banned user attempted token request: ${steamId} | IP: ${ip}`);
+      console.log(`🚫 Banned user attempted token request: ${steamId} | IP: ${ipAddress}`);
       return NextResponse.json(showDetailedResponse ? { error: 'Steam ID is banned' } : {}, {
         status: 403,
       });
@@ -90,11 +88,11 @@ export async function POST(req: Request) {
     const ticketValidation = await validateSteamTicket(steamId, ticket);
     if (!ticketValidation.valid) {
       console.log(
-        `🚫 AUTO-BAN: Invalid Steam ticket for token | Steam ID: ${steamId} | IP: ${ip} | Reason: ${ticketValidation.reason}`
+        `🚫 AUTO-BAN: Invalid Steam ticket for token | Steam ID: ${steamId} | IP: ${ipAddress} | Reason: ${ticketValidation.reason}`
       );
       await banSteamId(
         steamId,
-        ip,
+        ipAddress,
         `Token request with invalid Steam ticket: ${ticketValidation.reason}`
       );
       return NextResponse.json(
@@ -118,7 +116,9 @@ export async function POST(req: Request) {
     };
 
     const token = signToken(payload);
-    console.log(`✅ Token issued: ${steamId} | IP: ${ip} | Expires in: ${TOKEN_EXPIRY_SECONDS}s`);
+    console.log(
+      `✅ Token issued: ${steamId} | IP: ${ipAddress} | Expires in: ${TOKEN_EXPIRY_SECONDS}s`
+    );
 
     return NextResponse.json(
       {
@@ -129,7 +129,7 @@ export async function POST(req: Request) {
       { status: 200 }
     );
   } catch (err: any) {
-    console.log(`❌ Token request error | IP: ${ip} | Error: ${err.message}`);
+    console.log(`❌ Token request error | IP: ${ipAddress} | Error: ${err.message}`);
     return NextResponse.json(
       showDetailedResponse ? { error: 'Invalid request', details: err.message } : {},
       { status: 400 }
