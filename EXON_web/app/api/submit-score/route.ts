@@ -41,6 +41,7 @@ interface SubmitScoreResult {
   ScoreChanged: boolean;
   PreviousRank: number;
   NewRank: number;
+  Banned: boolean;
 }
 
 const RATE_LIMIT_WINDOW_SEC = 600; // 10 minutes
@@ -58,9 +59,6 @@ const EXPECTED_GUN_COUNT = 8; // Including 3 reserved slots
 const EXPECTED_ABILITY_COUNT = 5; // blast, blade, barrier, combustion, RESERVED1 (jump/warp/misc in acquisitions)
 const SPAWN_DURATION_MS = 2300; // Time for enemy to fully spawn
 const LEVEL_NAME = 'demo'; // Current level name
-const showDetailedResponse =
-  process.env.NODE_ENV === 'development' ||
-  process.env[Constants.ENABLE_DETAILED_RESPONSE] === 'true';
 
 // Round spawn data: [totalMonsters, mutants, lastSpawnRequestTime (seconds)]
 const ROUND_SPAWN_DATA = [
@@ -100,6 +98,7 @@ export async function POST(req: Request) {
     );
     if (ipRateLimited.limited) {
       console.log(`🚫 Rate limited (IP): ${ipAddress} | Steam ID: ${steamId || 'unknown'}`);
+      console.log(`Details: Rate limited, retryAfter: ${ipRateLimited.retryAfter}`);
       await logRequest({
         ipAddress: ipAddress,
         steamId,
@@ -110,10 +109,14 @@ export async function POST(req: Request) {
         success: false,
         requestResult: 'Rate limited (IP)',
       }).catch(() => {});
-      return NextResponse.json(
-        showDetailedResponse ? { error: 'Rate limited', retryAfter: ipRateLimited.retryAfter } : {},
-        { status: 429 }
-      );
+      const response: SubmitScoreResult = {
+        Success: false,
+        ScoreChanged: false,
+        PreviousRank: 0,
+        NewRank: 0,
+        Banned: false,
+      };
+      return NextResponse.json(response, { status: 429 });
     }
 
     const steamRateLimited = await checkRateLimit(
@@ -123,6 +126,7 @@ export async function POST(req: Request) {
     );
     if (steamRateLimited.limited) {
       console.log(`🚫 Rate limited (Steam ID): ${steamId} | IP: ${ipAddress}`);
+      console.log(`Details: Rate limited, retryAfter: ${steamRateLimited.retryAfter}`);
       await logRequest({
         ipAddress: ipAddress,
         steamId,
@@ -133,12 +137,14 @@ export async function POST(req: Request) {
         success: false,
         requestResult: 'Rate limited (Steam ID)',
       }).catch(() => {});
-      return NextResponse.json(
-        showDetailedResponse
-          ? { error: 'Rate limited', retryAfter: steamRateLimited.retryAfter }
-          : {},
-        { status: 429 }
-      );
+      const response: SubmitScoreResult = {
+        Success: false,
+        ScoreChanged: false,
+        PreviousRank: 0,
+        NewRank: 0,
+        Banned: false,
+      };
+      return NextResponse.json(response, { status: 429 });
     }
 
     // 2. Essential validation (auto-ban - legitimate client always sends these)
@@ -146,6 +152,7 @@ export async function POST(req: Request) {
       console.log(
         `🚫 AUTO-BAN: Missing required fields | Steam ID: ${steamId || 'unknown'} | IP: ${ipAddress}`
       );
+      console.log('Details: Missing required fields - steamId and ticket are required');
       if (steamId) {
         await banSteamId(steamId, ipAddress, 'Missing required fields (tampered client)');
       }
@@ -159,12 +166,14 @@ export async function POST(req: Request) {
         success: false,
         requestResult: 'Missing steamId or ticket - AUTO BAN',
       }).catch(() => {});
-      return NextResponse.json(
-        showDetailedResponse
-          ? { error: 'Missing required fields', details: 'steamId and ticket are required' }
-          : {},
-        { status: 400 }
-      );
+      const response: SubmitScoreResult = {
+        Success: false,
+        ScoreChanged: false,
+        PreviousRank: 0,
+        NewRank: 0,
+        Banned: true,
+      };
+      return NextResponse.json(response, { status: 400 });
     }
 
     // 3. Steam ticket validation
@@ -173,6 +182,7 @@ export async function POST(req: Request) {
       console.log(
         `🚫 Invalid Steam ticket: ${steamId} | IP: ${ipAddress} | Reason: ${ticketValidation.reason}`
       );
+      console.log(`Details: Steam ticket validation failed - ${ticketValidation.reason}`);
       await logRequest({
         ipAddress: ipAddress,
         steamId,
@@ -183,21 +193,21 @@ export async function POST(req: Request) {
         success: false,
         requestResult: ticketValidation.reason || 'Invalid ticket',
       }).catch(() => {});
-      return NextResponse.json(
-        showDetailedResponse
-          ? {
-              error: 'Steam ticket validation failed',
-              reason: ticketValidation.reason,
-            }
-          : {},
-        { status: 403 }
-      );
+      const response: SubmitScoreResult = {
+        Success: false,
+        ScoreChanged: false,
+        PreviousRank: 0,
+        NewRank: 0,
+        Banned: false,
+      };
+      return NextResponse.json(response, { status: 403 });
     }
 
     // 4. DB ban check
     const banned = await isSteamIdBanned(steamId);
     if (banned) {
       console.log(`🚫 Banned user attempted access: ${steamId} | IP: ${ipAddress}`);
+      console.log('Details: Steam ID is banned');
       await logRequest({
         ipAddress: ipAddress,
         steamId,
@@ -208,9 +218,14 @@ export async function POST(req: Request) {
         success: false,
         requestResult: 'Banned Steam ID',
       }).catch(() => {});
-      return NextResponse.json(showDetailedResponse ? { error: 'Steam ID is banned' } : {}, {
-        status: 403,
-      });
+      const response: SubmitScoreResult = {
+        Success: false,
+        ScoreChanged: false,
+        PreviousRank: 0,
+        NewRank: 0,
+        Banned: true,
+      };
+      return NextResponse.json(response, { status: 403 });
     }
 
     // 5. Validate all data fields (auto-ban - legitimate client always sends complete data)
@@ -224,6 +239,9 @@ export async function POST(req: Request) {
       !body.token
     ) {
       console.log(`🚫 AUTO-BAN: Missing data fields | Steam ID: ${steamId} | IP: ${ipAddress}`);
+      console.log(
+        'Details: Missing parameters - Required: finalScore, difficulty, roundTimes, roundKills, gunStats, abilityStats, token'
+      );
       await banSteamId(steamId, ipAddress, 'Missing data fields (tampered client)');
       await logRequest({
         ipAddress: ipAddress,
@@ -235,16 +253,14 @@ export async function POST(req: Request) {
         success: false,
         requestResult: 'Missing parameters - AUTO BAN',
       }).catch(() => {});
-      return NextResponse.json(
-        showDetailedResponse
-          ? {
-              error: 'Missing parameters',
-              details:
-                'Required: finalScore, difficulty, roundTimes, roundKills, gunStats, abilityStats, token',
-            }
-          : {},
-        { status: 400 }
-      );
+      const response: SubmitScoreResult = {
+        Success: false,
+        ScoreChanged: false,
+        PreviousRank: 0,
+        NewRank: 0,
+        Banned: true,
+      };
+      return NextResponse.json(response, { status: 400 });
     }
 
     // 6. Verify JWT token (auto-ban - legitimate client always sends valid token)
@@ -253,6 +269,7 @@ export async function POST(req: Request) {
       console.log(
         `🚫 AUTO-BAN: Invalid token | Steam ID: ${steamId} | IP: ${ipAddress} | Reason: ${tokenValidation.reason}`
       );
+      console.log(`Details: Token validation failed - ${tokenValidation.reason}`);
       await banSteamId(steamId, ipAddress, 'Invalid JWT token (tampered client)');
       await logRequest({
         ipAddress: ipAddress,
@@ -264,12 +281,14 @@ export async function POST(req: Request) {
         success: false,
         requestResult: tokenValidation.reason || 'Invalid token - AUTO BAN',
       }).catch(() => {});
-      return NextResponse.json(
-        showDetailedResponse
-          ? { error: 'Token validation failed', reason: tokenValidation.reason }
-          : {},
-        { status: 403 }
-      );
+      const response: SubmitScoreResult = {
+        Success: false,
+        ScoreChanged: false,
+        PreviousRank: 0,
+        NewRank: 0,
+        Banned: true,
+      };
+      return NextResponse.json(response, { status: 403 });
     }
 
     // 6b. Verify token steamId matches submission steamId (auto-ban)
@@ -277,6 +296,7 @@ export async function POST(req: Request) {
       console.log(
         `🚫 AUTO-BAN: Token/Steam ID mismatch | Token: ${tokenValidation.payload?.steamId} | Submission: ${steamId} | IP: ${ipAddress}`
       );
+      console.log('Details: Token validation failed - Steam ID mismatch');
       await banSteamId(steamId, ipAddress, 'Token Steam ID mismatch (tampered client)');
       await logRequest({
         ipAddress: ipAddress,
@@ -288,12 +308,14 @@ export async function POST(req: Request) {
         success: false,
         requestResult: 'Token Steam ID mismatch - AUTO BAN',
       }).catch(() => {});
-      return NextResponse.json(
-        showDetailedResponse
-          ? { error: 'Token validation failed', reason: 'Steam ID mismatch' }
-          : {},
-        { status: 403 }
-      );
+      const response: SubmitScoreResult = {
+        Success: false,
+        ScoreChanged: false,
+        PreviousRank: 0,
+        NewRank: 0,
+        Banned: true,
+      };
+      return NextResponse.json(response, { status: 403 });
     }
 
     // 6c. Check token nonce hasn't been used (prevent replay attacks)
@@ -305,6 +327,7 @@ export async function POST(req: Request) {
       console.log(
         `🚫 AUTO-BAN: Token replay attempt | Steam ID: ${steamId} | IP: ${ipAddress} | Nonce: ${nonce}`
       );
+      console.log('Details: Token validation failed - Token already used');
       await banSteamId(steamId, ipAddress, 'Token replay attack (tampered client)');
       await logRequest({
         ipAddress: ipAddress,
@@ -316,12 +339,14 @@ export async function POST(req: Request) {
         success: false,
         requestResult: 'Token replay - AUTO BAN',
       }).catch(() => {});
-      return NextResponse.json(
-        showDetailedResponse
-          ? { error: 'Token validation failed', reason: 'Token already used' }
-          : {},
-        { status: 403 }
-      );
+      const response: SubmitScoreResult = {
+        Success: false,
+        ScoreChanged: false,
+        PreviousRank: 0,
+        NewRank: 0,
+        Banned: true,
+      };
+      return NextResponse.json(response, { status: 403 });
     }
 
     // Mark token nonce as used (store until token expiry + buffer)
@@ -334,6 +359,7 @@ export async function POST(req: Request) {
       console.log(
         `🚫 Invalid stats: ${steamId} | IP: ${ipAddress} | Reason: ${statsValidation.reason}`
       );
+      console.log(`Details: Stats validation failed - ${statsValidation.reason}`);
       await logRequest({
         ipAddress: ipAddress,
         steamId,
@@ -344,12 +370,14 @@ export async function POST(req: Request) {
         success: false,
         requestResult: statsValidation.reason || 'Invalid stats',
       }).catch(() => {});
-      return NextResponse.json(
-        showDetailedResponse
-          ? { error: 'Stats validation failed', reason: statsValidation.reason }
-          : {},
-        { status: 403 }
-      );
+      const response: SubmitScoreResult = {
+        Success: false,
+        ScoreChanged: false,
+        PreviousRank: 0,
+        NewRank: 0,
+        Banned: false,
+      };
+      return NextResponse.json(response, { status: 403 });
     }
 
     // Pack stats into Steam metadata array
@@ -418,6 +446,7 @@ export async function POST(req: Request) {
       ScoreChanged: leaderboardEntry?.score_changed || false,
       PreviousRank: leaderboardEntry?.global_rank_previous || 0,
       NewRank: leaderboardEntry?.global_rank_new || 0,
+      Banned: false,
     };
 
     return NextResponse.json(response, { status: 200 });
@@ -425,6 +454,7 @@ export async function POST(req: Request) {
     console.log(
       `❌ Parse error: ${steamId || 'unknown'} | IP: ${ipAddress} | Error: ${err.message}`
     );
+    console.log(`Details: Parse error - ${err.message}`);
     await logRequest({
       ipAddress: ipAddress,
       steamId: steamId,
@@ -435,12 +465,14 @@ export async function POST(req: Request) {
       success: false,
       requestResult: 'Parse error',
     }).catch(() => {});
-    return NextResponse.json(
-      showDetailedResponse ? { error: 'Parse error', details: err.message } : {},
-      {
-        status: 400,
-      }
-    );
+    const response: SubmitScoreResult = {
+      Success: false,
+      ScoreChanged: false,
+      PreviousRank: 0,
+      NewRank: 0,
+      Banned: false,
+    };
+    return NextResponse.json(response, { status: 400 });
   }
 }
 
