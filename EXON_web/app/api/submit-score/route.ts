@@ -591,14 +591,6 @@ function validateStats(submission: StatsSubmission): { valid: boolean; reason?: 
       return { valid: false, reason: `${ability.name} has negative kills: ${ability.kills}` };
     }
 
-    // Validate combustion: utility should equal kills (combustion_utility = combustion kills)
-    if (ability.name === 'combustion' && ability.utility !== ability.kills) {
-      return {
-        valid: false,
-        reason: `Combustion utility (${ability.utility}) must equal combustion kills (${ability.kills})`,
-      };
-    }
-
     totalAbilityUses += ability.uses;
     totalAbilityUtility += ability.utility;
     totalAbilityKills += ability.kills;
