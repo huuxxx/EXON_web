@@ -20,15 +20,18 @@ export default function GameCarousel() {
 
   return (
     <div className="max-w-5xl w-full px-4">
-      <div className="overflow-hidden rounded-2xl" ref={emblaRef}>
+      <div className="overflow-hidden rounded-2xl border-2 border-zinc-700" ref={emblaRef}>
         <div className="flex">
           {carouselImages.map((src, i) => (
-            <div key={i} className="flex-[0_0_60%] relative aspect-[16/9] bg-zinc-900">
+            <div
+              key={i}
+              className="flex-[0_0_60%] relative aspect-[16/9] bg-zinc-900 border-r-2 border-zinc-700 last:border-r-0"
+            >
               <Image
                 src={src}
                 alt={`Screenshot ${i + 1}`}
                 fill
-                className="object-cover rounded-2xl"
+                className="object-cover"
                 priority={i === 0}
               />
             </div>
