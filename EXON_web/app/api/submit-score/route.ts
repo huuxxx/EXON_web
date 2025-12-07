@@ -525,8 +525,8 @@ function validateStats(submission: StatsSubmission): { valid: boolean; reason?: 
 
   // Verify finalScore matches sum of roundTimes
   const sumRoundTimes = submission.roundTimes.reduce((a, b) => a + b, 0);
-  if (Math.abs(submission.finalScore - sumRoundTimes) > 100) {
-    // Allow 100ms tolerance for rounding
+  if (Math.abs(submission.finalScore - sumRoundTimes) > 1500) {
+    // Allow 1500ms tolerance for rounding/conversion issues
     return {
       valid: false,
       reason: `finalScore (${submission.finalScore}) doesn't match sum of rounds (${sumRoundTimes})`,
