@@ -513,14 +513,6 @@ function validateStats(submission: StatsSubmission): { valid: boolean; reason?: 
       };
     }
 
-    // Validate max kills:
-    if (roundKills > totalMonsters) {
-      return {
-        valid: false,
-        reason: `Round ${i + 1} kills ${roundKills} exceeds maximum ${totalMonsters}`,
-      };
-    }
-
     // Validate kills aren't below lowest potential total monsters - mutants (mutants can self-destruct):
     const minimumKills = totalMonsters - mutants;
     if (roundKills < minimumKills) {
@@ -551,9 +543,10 @@ function validateStats(submission: StatsSubmission): { valid: boolean; reason?: 
 
   let totalKills = 0;
   let totalDamage = 0;
+  const maxAllowedKills = MAX_TOTAL_KILLS + 200; // Buffer for client bug
 
   for (const gun of submission.gunStats) {
-    if (gun.kills < 0 || gun.kills > MAX_TOTAL_KILLS) {
+    if (gun.kills < 0 || gun.kills > maxAllowedKills) {
       return { valid: false, reason: `${gun.name} kills out of range: ${gun.kills}` };
     }
     if (gun.damage < 0 || gun.damage > MAX_TOTAL_DAMAGE) {
@@ -563,8 +556,8 @@ function validateStats(submission: StatsSubmission): { valid: boolean; reason?: 
     totalDamage += gun.damage;
   }
 
-  if (totalKills > MAX_TOTAL_KILLS) {
-    return { valid: false, reason: `Total kills exceeds maximum: ${totalKills}` };
+  if (totalKills > maxAllowedKills) {
+    return { valid: false, reason: `Total gun kills exceeds maximum: ${totalKills}` };
   }
 
   if (totalDamage > MAX_TOTAL_DAMAGE) {
@@ -615,14 +608,22 @@ function validateStats(submission: StatsSubmission): { valid: boolean; reason?: 
     return { valid: false, reason: `Total ability uses exceeds maximum: ${totalAbilityUses}` };
   }
 
-  // Validate total kills: gun kills + ability kills should match sum of roundKills
+  // Validate total kills: gun kills + ability kills should meet minimum (sum of roundKills)
+  // Note: Client bug may count more kills than monsters, so we check minimum with generous max allowance
   const sumRoundKills = submission.roundKills.reduce((a, b) => a + b, 0);
   const calculatedTotalKills = totalKills + totalAbilityKills;
 
-  if (calculatedTotalKills !== sumRoundKills) {
+  if (calculatedTotalKills < sumRoundKills) {
     return {
       valid: false,
-      reason: `Kill count mismatch: gun kills (${totalKills}) + ability kills (${totalAbilityKills}) = ${calculatedTotalKills}, but roundKills sum is ${sumRoundKills}`,
+      reason: `Kill count below minimum: gun kills (${totalKills}) + ability kills (${totalAbilityKills}) = ${calculatedTotalKills}, but roundKills sum is ${sumRoundKills}`,
+    };
+  }
+
+  if (calculatedTotalKills > maxAllowedKills) {
+    return {
+      valid: false,
+      reason: `Kill count suspiciously high: ${calculatedTotalKills} exceeds maximum allowed ${maxAllowedKills}`,
     };
   }
 
