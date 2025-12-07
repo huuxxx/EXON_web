@@ -403,7 +403,7 @@ export async function POST(req: Request) {
       steamid: steamId,
       score: score.toString(),
       scoremethod: Constants.STEAM_API_SCORE_METHOD_KEEP_BEST,
-      details: JSON.stringify(details),
+      // details: JSON.stringify(details),
     });
 
     const url = `https://partner.steam-api.com/ISteamLeaderboards/SetLeaderboardScore/v1/`;
