@@ -523,13 +523,13 @@ function validateStats(submission: StatsSubmission): { valid: boolean; reason?: 
     }
 
     // Validate kills don't exceed a reasonable maximum (with generous buffer for client bug)
-    const maxReasonableKills = totalMonsters + 50; // Very generous buffer
-    if (roundKills > maxReasonableKills) {
-      return {
-        valid: false,
-        reason: `Round ${i + 1} kills ${roundKills} exceeds reasonable maximum: ${maxReasonableKills}`,
-      };
-    }
+    // const maxReasonableKills = totalMonsters + 50; // Very generous buffer
+    // if (roundKills > maxReasonableKills) {
+    //   return {
+    //     valid: false,
+    //     reason: `Round ${i + 1} kills ${roundKills} exceeds reasonable maximum: ${maxReasonableKills}`,
+    //   };
+    // }
   }
 
   // Verify finalScore matches sum of roundTimes
