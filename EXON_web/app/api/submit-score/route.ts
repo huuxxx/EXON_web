@@ -521,6 +521,15 @@ function validateStats(submission: StatsSubmission): { valid: boolean; reason?: 
         reason: `Round ${i + 1} has less kills than minimum possible: ${minimumKills}`,
       };
     }
+
+    // Validate kills don't exceed a reasonable maximum (with generous buffer for client bug)
+    const maxReasonableKills = totalMonsters + 50; // Very generous buffer
+    if (roundKills > maxReasonableKills) {
+      return {
+        valid: false,
+        reason: `Round ${i + 1} kills ${roundKills} exceeds reasonable maximum: ${maxReasonableKills}`,
+      };
+    }
   }
 
   // Verify finalScore matches sum of roundTimes
@@ -600,17 +609,9 @@ function validateStats(submission: StatsSubmission): { valid: boolean; reason?: 
     return { valid: false, reason: `Total ability uses exceeds maximum: ${totalAbilityUses}` };
   }
 
-  // Validate total kills: gun kills + ability kills should meet minimum (sum of roundKills)
-  // Note: Client bug may count more kills than monsters, so we check minimum with generous max allowance
-  const sumRoundKills = submission.roundKills.reduce((a, b) => a + b, 0);
+  // Validate total kills: gun kills + ability kills should be within reasonable range
+  // Note: Client bug causes unreliable roundKills data, so we only check against max threshold
   const calculatedTotalKills = totalKills + totalAbilityKills;
-
-  if (calculatedTotalKills < sumRoundKills) {
-    return {
-      valid: false,
-      reason: `Kill count below minimum: gun kills (${totalKills}) + ability kills (${totalAbilityKills}) = ${calculatedTotalKills}, but roundKills sum is ${sumRoundKills}`,
-    };
-  }
 
   if (calculatedTotalKills > maxAllowedKills) {
     return {
