@@ -565,9 +565,9 @@ function validateStats(submission: StatsSubmission): { valid: boolean; reason?: 
     totalDamage += gun.damage;
   }
 
-  if (totalKills > maxAllowedKills) {
-    return { valid: false, reason: `Total gun kills exceeds maximum: ${totalKills}` };
-  }
+  // if (totalKills > maxAllowedKills) {
+  //   return { valid: false, reason: `Total gun kills exceeds maximum: ${totalKills}` };
+  // }
 
   if (totalDamage > MAX_TOTAL_DAMAGE) {
     return { valid: false, reason: `Total damage exceeds maximum: ${totalDamage}` };
@@ -613,12 +613,12 @@ function validateStats(submission: StatsSubmission): { valid: boolean; reason?: 
   // Note: Client bug causes unreliable roundKills data, so we only check against max threshold
   const calculatedTotalKills = totalKills + totalAbilityKills;
 
-  if (calculatedTotalKills > maxAllowedKills) {
-    return {
-      valid: false,
-      reason: `Kill count suspiciously high: ${calculatedTotalKills} exceeds maximum allowed ${maxAllowedKills}`,
-    };
-  }
+  // if (calculatedTotalKills > maxAllowedKills) {
+  //   return {
+  //     valid: false,
+  //     reason: `Kill count suspiciously high: ${calculatedTotalKills} exceeds maximum allowed ${maxAllowedKills}`,
+  //   };
+  // }
 
   return { valid: true };
 }
