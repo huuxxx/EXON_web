@@ -60,32 +60,6 @@ const EXPECTED_ABILITY_COUNT = 5; // blast, blade, barrier, combustion, RESERVED
 const SPAWN_DURATION_MS = 2300; // Time for enemy to fully spawn
 const LEVEL_NAME = 'demo'; // Current level name
 
-/**
- * Generate a mock Steam API response for testing
- * Simulates what Steam would return without actually calling the API
- */
-function generateMockSteamResponse(steamId: string, score: number, isNewBest: boolean) {
-  const mockResponse = {
-    result: {
-      score_changed: isNewBest,
-      global_rank_previous: isNewBest
-        ? Math.floor(Math.random() * 100) + 50
-        : Math.floor(Math.random() * 100) + 10,
-      global_rank_new: isNewBest
-        ? Math.floor(Math.random() * 50) + 1
-        : Math.floor(Math.random() * 100) + 10,
-      leaderboard_entry_count: Math.floor(Math.random() * 500) + 100,
-    },
-  };
-
-  // If score didn't change, keep ranks the same
-  if (!isNewBest) {
-    mockResponse.result.global_rank_new = mockResponse.result.global_rank_previous;
-  }
-
-  return mockResponse;
-}
-
 // Round spawn data: [totalMonsters, mutants, lastSpawnRequestTime (seconds)]
 const ROUND_SPAWN_DATA = [
   [12, 0, 15], // Round 1
@@ -112,6 +86,10 @@ export async function POST(req: Request) {
     steamId = body.steamId;
     score = body.finalScore;
     const ticket = body.ticket;
+
+    console.log(
+      `🔍 RoundTimes received: length=${body.roundTimes?.length}, values=${JSON.stringify(body.roundTimes)}`
+    );
 
     // 1. Rate limit check - IP and Steam ID
     const ipLimiterKey = `ip:${ipAddress}`;
@@ -420,6 +398,7 @@ export async function POST(req: Request) {
       details[54 + index] = time;
     });
 
+    console.log(`📊 Details array length: ${details.length}`);
     const leaderboardId = getLeaderboardIdForDifficulty(body.difficulty);
 
     const params = new URLSearchParams({
@@ -429,30 +408,64 @@ export async function POST(req: Request) {
       steamid: steamId,
       score: score.toString(),
       scoremethod: Constants.STEAM_API_SCORE_METHOD_KEEP_BEST,
-      // details: JSON.stringify(details),
+      details: details.join(','),
     });
+
+    console.log(
+      `📊 Details param being sent to Steam: ${params.get('details')?.substring(0, 200)}...`
+    );
 
     const mockMode = process.env[Constants.MOCK_STEAM_API] === 'true';
     let json: any = null;
     let raw: string = '';
+    const steamUrl = `https://partner.steam-api.com/ISteamLeaderboards/SetLeaderboardScore/v1/`;
 
-    if (mockMode) {
-      console.log(`🧪 MOCK MODE: Simulating Steam API call for ${steamId}`);
-      json = generateMockSteamResponse(steamId, score, true);
-      success = true;
-    } else {
-      const url = `https://partner.steam-api.com/ISteamLeaderboards/SetLeaderboardScore/v1/`;
-      const steamRes = await fetch(url, {
+    const submitToSteam = async (params: URLSearchParams) => {
+      const steamRes = await fetch(steamUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         },
         body: params.toString(),
       });
+      const rawResponse = await steamRes.text();
+      return {
+        json: JSON.parse(rawResponse),
+        raw: rawResponse,
+        success: steamRes.ok,
+      };
+    };
 
-      raw = await steamRes.text();
-      json = JSON.parse(raw);
-      success = steamRes.ok ? true : false;
+    if (mockMode) {
+      console.log(`🧪 MOCK MODE: Simulating Steam API call for ${steamId}`);
+      json = generateMockSteamResponse(steamId, score, true);
+      success = true;
+    } else {
+      const result = await submitToSteam(params);
+      json = result.json;
+      raw = result.raw;
+      success = result.success;
+
+      // Failsafe: If Steam returns result code 8 (invalid parameter), retry without details
+      if (json?.result?.result === 8) {
+        console.log(`🔄 Retrying submission without details field due to result code 8`);
+
+        const paramsWithoutDetails = new URLSearchParams({
+          key: process.env[Constants.STEAM_WEB_API_KEY]!,
+          appid: process.env[Constants.APP_ID_DEMO]!,
+          leaderboardid: process.env[Constants.LEADERBOARD_TEST_ID]!,
+          steamid: steamId,
+          score: score.toString(),
+          scoremethod: Constants.STEAM_API_SCORE_METHOD_KEEP_BEST,
+        });
+
+        const retryResult = await submitToSteam(paramsWithoutDetails);
+        json = retryResult.json;
+        raw = retryResult.raw;
+        success = retryResult.success;
+
+        console.log('🔄 Retry response: ', json ?? raw);
+      }
     }
 
     if (success) {
@@ -706,4 +719,25 @@ function packStatsToMetadata(gunStats: GunStats[], abilityStats: AbilityStats[])
     }
   });
   return details;
+}
+
+function generateMockSteamResponse(steamId: string, score: number, isNewBest: boolean) {
+  const mockResponse = {
+    result: {
+      score_changed: isNewBest,
+      global_rank_previous: isNewBest
+        ? Math.floor(Math.random() * 100) + 50
+        : Math.floor(Math.random() * 100) + 10,
+      global_rank_new: isNewBest
+        ? Math.floor(Math.random() * 50) + 1
+        : Math.floor(Math.random() * 100) + 10,
+      leaderboard_entry_count: Math.floor(Math.random() * 500) + 100,
+    },
+  };
+
+  if (!isNewBest) {
+    mockResponse.result.global_rank_new = mockResponse.result.global_rank_previous;
+  }
+
+  return mockResponse;
 }
