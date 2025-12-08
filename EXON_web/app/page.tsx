@@ -12,6 +12,9 @@ const navigation = [
   { name: 'Blog', href: 'https://hux-dev.com/blogs/EXON/' },
 ];
 
+// Force dynamic rendering - fetch fresh data on every request
+export const dynamic = 'force-dynamic';
+
 export default async function Home() {
   const leaderboardData = await getTop10ScoresAllDifficulties();
 
