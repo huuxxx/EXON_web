@@ -453,7 +453,7 @@ export async function POST(req: Request) {
         const paramsWithoutDetails = new URLSearchParams({
           key: process.env[Constants.STEAM_WEB_API_KEY]!,
           appid: process.env[Constants.APP_ID_DEMO]!,
-          leaderboardid: process.env[Constants.LEADERBOARD_TEST_ID]!,
+          leaderboardid: process.env[leaderboardId]!,
           steamid: steamId,
           score: score.toString(),
           scoremethod: Constants.STEAM_API_SCORE_METHOD_KEEP_BEST,
