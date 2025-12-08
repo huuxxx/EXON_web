@@ -60,6 +60,32 @@ const EXPECTED_ABILITY_COUNT = 5; // blast, blade, barrier, combustion, RESERVED
 const SPAWN_DURATION_MS = 2300; // Time for enemy to fully spawn
 const LEVEL_NAME = 'demo'; // Current level name
 
+/**
+ * Generate a mock Steam API response for testing
+ * Simulates what Steam would return without actually calling the API
+ */
+function generateMockSteamResponse(steamId: string, score: number, isNewBest: boolean) {
+  const mockResponse = {
+    result: {
+      score_changed: isNewBest,
+      global_rank_previous: isNewBest
+        ? Math.floor(Math.random() * 100) + 50
+        : Math.floor(Math.random() * 100) + 10,
+      global_rank_new: isNewBest
+        ? Math.floor(Math.random() * 50) + 1
+        : Math.floor(Math.random() * 100) + 10,
+      leaderboard_entry_count: Math.floor(Math.random() * 500) + 100,
+    },
+  };
+
+  // If score didn't change, keep ranks the same
+  if (!isNewBest) {
+    mockResponse.result.global_rank_new = mockResponse.result.global_rank_previous;
+  }
+
+  return mockResponse;
+}
+
 // Round spawn data: [totalMonsters, mutants, lastSpawnRequestTime (seconds)]
 const ROUND_SPAWN_DATA = [
   [12, 0, 15], // Round 1
@@ -406,19 +432,28 @@ export async function POST(req: Request) {
       // details: JSON.stringify(details),
     });
 
-    const url = `https://partner.steam-api.com/ISteamLeaderboards/SetLeaderboardScore/v1/`;
-    const steamRes = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-      },
-      body: params.toString(),
-    });
-
-    const raw = await steamRes.text();
+    const mockMode = process.env[Constants.MOCK_STEAM_API] === 'true';
     let json: any = null;
-    json = JSON.parse(raw);
-    success = steamRes.ok ? true : false;
+    let raw: string = '';
+
+    if (mockMode) {
+      console.log(`🧪 MOCK MODE: Simulating Steam API call for ${steamId}`);
+      json = generateMockSteamResponse(steamId, score, true);
+      success = true;
+    } else {
+      const url = `https://partner.steam-api.com/ISteamLeaderboards/SetLeaderboardScore/v1/`;
+      const steamRes = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        },
+        body: params.toString(),
+      });
+
+      raw = await steamRes.text();
+      json = JSON.parse(raw);
+      success = steamRes.ok ? true : false;
+    }
 
     if (success) {
       console.log(

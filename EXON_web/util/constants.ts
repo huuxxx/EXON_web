@@ -11,6 +11,7 @@ export class Constants {
   static readonly LEADERBOARD_DEMO_HARD_ID = 'LEADERBOARD_DEMO_HARD_ID';
   static readonly LEADERBOARD_DEMO_VERY_HARD_ID = 'LEADERBOARD_DEMO_VERY_HARD_ID';
   static readonly ENABLE_DETAILED_RESPONSE = 'ENABLE_DETAILED_RESPONSE';
+  static readonly MOCK_STEAM_API = 'MOCK_STEAM_API';
 
   // Steam API constants
   static readonly STEAM_API_SCORE_METHOD_KEEP_BEST = 'KeepBest';
