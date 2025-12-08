@@ -51,7 +51,7 @@ const redis = Redis.fromEnv();
 // Validation constants
 const MIN_TOTAL_DAMAGE = 100000;
 const MAX_TOTAL_DAMAGE = 200000;
-const MAX_TOTAL_KILLS = 275;
+const MAX_TOTAL_KILLS = 255 + 10; // Sum of ROUND_SPAWN_DATA[0] +10 extra for potential counting discrepancies
 const MAX_ABILITY_USES = 150;
 const MAX_UTILITY_STAT = 50000;
 const EXPECTED_ROUND_COUNT = 10;
@@ -87,9 +87,8 @@ export async function POST(req: Request) {
     score = body.finalScore;
     const ticket = body.ticket;
 
-    console.log(
-      `🔍 RoundTimes received: length=${body.roundTimes?.length}, values=${JSON.stringify(body.roundTimes)}`
-    );
+    const jsonBody = JSON.stringify(body);
+    console.log(`submit-score received: ${jsonBody}`);
 
     // 1. Rate limit check - IP and Steam ID
     const ipLimiterKey = `ip:${ipAddress}`;
@@ -411,9 +410,7 @@ export async function POST(req: Request) {
       details: details.join(','),
     });
 
-    console.log(
-      `📊 Details param being sent to Steam: ${params.get('details')?.substring(0, 200)}...`
-    );
+    console.log(`📊 Details param being sent to Steam: ${params.get('details')}`);
 
     const mockMode = process.env[Constants.MOCK_STEAM_API] === 'true';
     let json: any = null;
@@ -570,27 +567,24 @@ function validateStats(submission: StatsSubmission): { valid: boolean; reason?: 
       };
     }
 
-    // Validate kills don't exceed a reasonable maximum (with generous buffer for client bug)
-    // const maxReasonableKills = totalMonsters + 50; // Very generous buffer
-    // if (roundKills > maxReasonableKills) {
-    //   return {
-    //     valid: false,
-    //     reason: `Round ${i + 1} kills ${roundKills} exceeds reasonable maximum: ${maxReasonableKills}`,
-    //   };
-    // }
+    // Validate kills don't exceed maximum
+    if (roundKills > totalMonsters) {
+      return {
+        valid: false,
+        reason: `Round ${i + 1} kills ${roundKills} exceeds reasonable maximum: ${totalMonsters}`,
+      };
+    }
   }
 
-  // Verify finalScore matches sum of roundTimes
+  // Verify finalScore matches sum of roundTimes, within 1000ms tolerance
   const sumRoundTimes = submission.roundTimes.reduce((a, b) => a + b, 0);
-  if (Math.abs(submission.finalScore - sumRoundTimes) > 1500) {
-    // Allow 1500ms tolerance for rounding/conversion issues
+  if (Math.abs(submission.finalScore - sumRoundTimes) > 1000) {
     return {
       valid: false,
       reason: `finalScore (${submission.finalScore}) doesn't match sum of rounds (${sumRoundTimes})`,
     };
   }
 
-  // Validate gun stats
   if (submission.gunStats.length !== EXPECTED_GUN_COUNT) {
     return {
       valid: false,
@@ -598,34 +592,32 @@ function validateStats(submission: StatsSubmission): { valid: boolean; reason?: 
     };
   }
 
-  let totalKills = 0;
-  let totalDamage = 0;
-  const maxAllowedKills = MAX_TOTAL_KILLS + 200; // Buffer for client bug
+  let totalGunKills = 0;
+  let totalGunDamage = 0;
 
   for (const gun of submission.gunStats) {
-    if (gun.kills < 0 || gun.kills > maxAllowedKills) {
+    if (gun.kills < 0 || gun.kills > MAX_TOTAL_KILLS) {
       return { valid: false, reason: `${gun.name} kills out of range: ${gun.kills}` };
     }
     if (gun.damage < 0 || gun.damage > MAX_TOTAL_DAMAGE) {
       return { valid: false, reason: `${gun.name} damage out of range: ${gun.damage}` };
     }
-    totalKills += gun.kills;
-    totalDamage += gun.damage;
+    totalGunKills += gun.kills;
+    totalGunDamage += gun.damage;
   }
 
-  // if (totalKills > maxAllowedKills) {
-  //   return { valid: false, reason: `Total gun kills exceeds maximum: ${totalKills}` };
-  // }
-
-  if (totalDamage > MAX_TOTAL_DAMAGE) {
-    return { valid: false, reason: `Total damage exceeds maximum: ${totalDamage}` };
+  if (totalGunKills > MAX_TOTAL_KILLS) {
+    return { valid: false, reason: `Total gun kills exceeds maximum: ${totalGunKills}` };
   }
 
-  if (totalDamage < MIN_TOTAL_DAMAGE) {
-    return { valid: false, reason: `Total damage below minimum: ${totalDamage}` };
+  if (totalGunDamage > MAX_TOTAL_DAMAGE) {
+    return { valid: false, reason: `Total damage exceeds maximum: ${totalGunDamage}` };
   }
 
-  // Validate ability stats
+  if (totalGunDamage < MIN_TOTAL_DAMAGE) {
+    return { valid: false, reason: `Total damage below minimum: ${totalGunDamage}` };
+  }
+
   if (submission.abilityStats.length !== EXPECTED_ABILITY_COUNT) {
     return {
       valid: false,
@@ -657,16 +649,14 @@ function validateStats(submission: StatsSubmission): { valid: boolean; reason?: 
     return { valid: false, reason: `Total ability uses exceeds maximum: ${totalAbilityUses}` };
   }
 
-  // Validate total kills: gun kills + ability kills should be within reasonable range
-  // Note: Client bug causes unreliable roundKills data, so we only check against max threshold
-  const calculatedTotalKills = totalKills + totalAbilityKills;
+  const totalKillsCombined = totalGunKills + totalAbilityKills;
 
-  // if (calculatedTotalKills > maxAllowedKills) {
-  //   return {
-  //     valid: false,
-  //     reason: `Kill count suspiciously high: ${calculatedTotalKills} exceeds maximum allowed ${maxAllowedKills}`,
-  //   };
-  // }
+  if (totalKillsCombined > MAX_TOTAL_KILLS) {
+    return {
+      valid: false,
+      reason: `Kill count suspiciously high: ${totalKillsCombined} exceeds maximum allowed ${MAX_TOTAL_KILLS}`,
+    };
+  }
 
   return { valid: true };
 }
