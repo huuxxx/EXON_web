@@ -49,10 +49,10 @@ const MAX_SUBMISSIONS_PER_WINDOW = 3; // 3 full completions per 10 minutes
 const redis = Redis.fromEnv();
 
 // Validation constants
-const MIN_TOTAL_DAMAGE = 100000;
-const MAX_TOTAL_DAMAGE = 200000;
+const MIN_TOTAL_DAMAGE_COMBINED = 100000;
+const MAX_TOTAL_DAMAGE_COMBINED = 200000;
 const MAX_TOTAL_KILLS = 255 + 10; // Sum of ROUND_SPAWN_DATA[0] +10 extra for potential counting discrepancies
-const MAX_ABILITY_USES = 150;
+const MAX_ABILITY_USES = 1000;
 const MAX_UTILITY_STAT = 50000;
 const EXPECTED_ROUND_COUNT = 10;
 const EXPECTED_GUN_COUNT = 8; // Including 3 reserved slots
@@ -86,9 +86,6 @@ export async function POST(req: Request) {
     steamId = body.steamId;
     score = body.finalScore;
     const ticket = body.ticket;
-
-    const jsonBody = JSON.stringify(body);
-    console.log(`submit-score received: ${jsonBody}`);
 
     // 1. Rate limit check - IP and Steam ID
     const ipLimiterKey = `ip:${ipAddress}`;
@@ -397,7 +394,44 @@ export async function POST(req: Request) {
       details[54 + index] = time;
     });
 
-    console.log(`📊 Details array length: ${details.length}`);
+    // Log complete details mapping
+    console.log(`📊 Details Mapping for ${steamId}:`);
+    console.log(`   Guns (0-23):`);
+    const gunOrder = [
+      'pistol',
+      'shotgun',
+      'rifle',
+      'launcher',
+      'minigun',
+      'reserved1',
+      'reserved2',
+      'reserved3',
+    ];
+    gunOrder.forEach((gunName, index) => {
+      const offset = index * 3;
+      console.log(
+        `     [${offset}-${offset + 2}] ${gunName}: kills=${details[offset]}, damage=${details[offset + 1]}, acquisitions=${details[offset + 2]}`
+      );
+    });
+    console.log(`   Abilities (24-48):`);
+    const abilityOrder = ['blast', 'blade', 'barrier', 'combustion', 'reserved1'];
+    abilityOrder.forEach((abilityName, index) => {
+      const offset = 24 + index * 5;
+      console.log(
+        `     [${offset}-${offset + 4}] ${abilityName}: kills=${details[offset]}, uses=${details[offset + 1]}, utility=${details[offset + 2]}, damage=${details[offset + 3]}, acquisitions=${details[offset + 4]}`
+      );
+    });
+    console.log(`   Acquisition Flags (49-51):`);
+    console.log(`     [49] jump_acquisitions: ${details[49]}`);
+    console.log(`     [50] warp_acquisitions: ${details[50]}`);
+    console.log(`     [51] miscellaneous_acquisitions: ${details[51]}`);
+    console.log(`   Reserved (52-53): ${details[52]}, ${details[53]}`);
+    console.log(`   Round Times (54-63):`);
+    body.roundTimes.forEach((time, index) => {
+      console.log(`     [${54 + index}] round_${index + 1}_time: ${time}ms`);
+    });
+    console.log(`   Total details array length: ${details.length}`);
+
     const leaderboardId = getLeaderboardIdForDifficulty(body.difficulty);
 
     const params = new URLSearchParams({
@@ -599,7 +633,7 @@ function validateStats(submission: StatsSubmission): { valid: boolean; reason?: 
     if (gun.kills < 0 || gun.kills > MAX_TOTAL_KILLS) {
       return { valid: false, reason: `${gun.name} kills out of range: ${gun.kills}` };
     }
-    if (gun.damage < 0 || gun.damage > MAX_TOTAL_DAMAGE) {
+    if (gun.damage < 0) {
       return { valid: false, reason: `${gun.name} damage out of range: ${gun.damage}` };
     }
     totalGunKills += gun.kills;
@@ -608,14 +642,6 @@ function validateStats(submission: StatsSubmission): { valid: boolean; reason?: 
 
   if (totalGunKills > MAX_TOTAL_KILLS) {
     return { valid: false, reason: `Total gun kills exceeds maximum: ${totalGunKills}` };
-  }
-
-  if (totalGunDamage > MAX_TOTAL_DAMAGE) {
-    return { valid: false, reason: `Total damage exceeds maximum: ${totalGunDamage}` };
-  }
-
-  if (totalGunDamage < MIN_TOTAL_DAMAGE) {
-    return { valid: false, reason: `Total damage below minimum: ${totalGunDamage}` };
   }
 
   if (submission.abilityStats.length !== EXPECTED_ABILITY_COUNT) {
@@ -628,6 +654,7 @@ function validateStats(submission: StatsSubmission): { valid: boolean; reason?: 
   let totalAbilityUses = 0;
   let totalAbilityUtility = 0;
   let totalAbilityKills = 0;
+  let totalAbilityDamage = 0;
 
   for (const ability of submission.abilityStats) {
     if (ability.uses < 0 || ability.uses > MAX_ABILITY_USES) {
@@ -643,6 +670,23 @@ function validateStats(submission: StatsSubmission): { valid: boolean; reason?: 
     totalAbilityUses += ability.uses;
     totalAbilityUtility += ability.utility;
     totalAbilityKills += ability.kills;
+    totalAbilityDamage += ability.damage;
+  }
+
+  let totalDamageCombined = totalAbilityDamage + totalGunDamage;
+
+  if (totalDamageCombined < MIN_TOTAL_DAMAGE_COMBINED) {
+    return {
+      valid: false,
+      reason: `Total damage (gun + ability) below minimum: ${totalDamageCombined}`,
+    };
+  }
+
+  if (totalDamageCombined > MAX_TOTAL_DAMAGE_COMBINED) {
+    return {
+      valid: false,
+      reason: `Total damage (gun + ability) exceeds maximum: ${totalDamageCombined}`,
+    };
   }
 
   if (totalAbilityUses > MAX_ABILITY_USES) {
