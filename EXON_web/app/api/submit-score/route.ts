@@ -432,8 +432,7 @@ export async function POST(req: Request) {
     });
     console.log(`   Total details array length: ${details.length}`);
 
-    // const leaderboardId = getLeaderboardIdForDifficulty(body.difficulty);
-    const leaderboardId = Constants.LEADERBOARD_TEST_ID;
+    const leaderboardId = getLeaderboardIdForDifficulty(body.difficulty);
 
     // Convert details array to binary format (64 int32 values = 256 bytes)
     // Steam expects details as raw binary data
