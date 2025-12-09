@@ -432,32 +432,57 @@ export async function POST(req: Request) {
     });
     console.log(`   Total details array length: ${details.length}`);
 
-    const leaderboardId = getLeaderboardIdForDifficulty(body.difficulty);
+    // const leaderboardId = getLeaderboardIdForDifficulty(body.difficulty);
+    const leaderboardId = Constants.LEADERBOARD_TEST_ID;
 
-    const params = new URLSearchParams({
-      key: process.env[Constants.STEAM_WEB_API_KEY]!,
-      appid: process.env[Constants.APP_ID_DEMO]!,
-      leaderboardid: process.env[leaderboardId]!,
-      steamid: steamId,
-      score: score.toString(),
-      scoremethod: Constants.STEAM_API_SCORE_METHOD_KEEP_BEST,
-      details: details.join(','),
+    // Convert details array to binary format (64 int32 values = 256 bytes)
+    // Steam expects details as raw binary data
+    const buffer = new ArrayBuffer(details.length * 4); // 4 bytes per int32
+    const view = new DataView(buffer);
+    details.forEach((value, index) => {
+      view.setInt32(index * 4, value, true); // true = little-endian
     });
+    const uint8Array = new Uint8Array(buffer);
 
-    console.log(`📊 Details param being sent to Steam: ${params.get('details')}`);
+    console.log(`📊 Details array: ${details.length} int32 values`);
+    console.log(`📊 Binary size: ${buffer.byteLength} bytes`);
 
     const mockMode = process.env[Constants.MOCK_STEAM_API] === 'true';
     let json: any = null;
     let raw: string = '';
     const steamUrl = `https://partner.steam-api.com/ISteamLeaderboards/SetLeaderboardScore/v1/`;
 
-    const submitToSteam = async (params: URLSearchParams) => {
+    const submitToSteam = async (
+      detailsBuffer: Uint8Array | null
+    ): Promise<{ json: any; raw: string; success: boolean }> => {
+      const formBody = new URLSearchParams({
+        key: process.env[Constants.STEAM_WEB_API_KEY]!,
+        appid: process.env[Constants.APP_ID_DEMO]!,
+        leaderboardid: process.env[leaderboardId]!,
+        steamid: steamId!,
+        score: score!.toString(),
+        scoremethod: Constants.STEAM_API_SCORE_METHOD_KEEP_BEST,
+      });
+
+      let bodyString = formBody.toString();
+      if (detailsBuffer) {
+        // Convert binary data to URL-encoded format - Steam expects details as raw bytes, URL-encoded
+        const detailsParam = Array.from(detailsBuffer)
+          .map((byte) => {
+            const hex = byte.toString(16).padStart(2, '0');
+            return `%${hex}`;
+          })
+          .join('');
+        bodyString += `&details=${detailsParam}`;
+        console.log(`📊 Sending details as URL-encoded bytes (${detailsBuffer.length} bytes)`);
+      }
+
       const steamRes = await fetch(steamUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         },
-        body: params.toString(),
+        body: bodyString,
       });
       const rawResponse = await steamRes.text();
       return {
@@ -472,7 +497,7 @@ export async function POST(req: Request) {
       json = generateMockSteamResponse(steamId, score, true);
       success = true;
     } else {
-      const result = await submitToSteam(params);
+      const result = await submitToSteam(uint8Array);
       json = result.json;
       raw = result.raw;
       success = result.success;
@@ -481,16 +506,7 @@ export async function POST(req: Request) {
       if (json?.result?.result === 8) {
         console.log(`🔄 Retrying submission without details field due to result code 8`);
 
-        const paramsWithoutDetails = new URLSearchParams({
-          key: process.env[Constants.STEAM_WEB_API_KEY]!,
-          appid: process.env[Constants.APP_ID_DEMO]!,
-          leaderboardid: process.env[leaderboardId]!,
-          steamid: steamId,
-          score: score.toString(),
-          scoremethod: Constants.STEAM_API_SCORE_METHOD_KEEP_BEST,
-        });
-
-        const retryResult = await submitToSteam(paramsWithoutDetails);
+        const retryResult = await submitToSteam(null);
         json = retryResult.json;
         raw = retryResult.raw;
         success = retryResult.success;
