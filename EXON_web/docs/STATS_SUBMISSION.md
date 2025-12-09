@@ -83,39 +83,57 @@ Stats are packed into Steam's 64-integer metadata array for display on leaderboa
 
 ### Layout
 
-**Guns (Slots 0-23):** 12 guns × 2 stats = 24 slots
+**Guns (Slots 0-23):** 8 guns × 3 stats = 24 slots
 
 ```
-[0-1]   = pistol_kills, pistol_damage
-[2-3]   = shotgun_kills, shotgun_damage
-[4-5]   = rifle_kills, rifle_damage
-[6-7]   = launcher_kills, launcher_damage
-[8-9]   = minigun_kills, minigun_damage
-[10-23] = reserved for 7 future guns
+[0-2]   = pistol_kills, pistol_damage, pistol_acquisitions
+[3-5]   = shotgun_kills, shotgun_damage, shotgun_acquisitions
+[6-8]   = rifle_kills, rifle_damage, rifle_acquisitions
+[9-11]  = launcher_kills, launcher_damage, launcher_acquisitions
+[12-14] = minigun_kills, minigun_damage, minigun_acquisitions
+[15-17] = reserved1_kills, reserved1_damage, reserved1_acquisitions
+[18-20] = reserved2_kills, reserved2_damage, reserved2_acquisitions
+[21-23] = reserved3_kills, reserved3_damage, reserved3_acquisitions
 ```
 
-**Abilities (Slots 24-43):** 10 abilities × 2 stats = 20 slots
+**Abilities (Slots 24-48):** 5 abilities × 5 stats = 25 slots
 
 ```
-[24-25] = blast_uses, blast_utility (nanite)
-[26-27] = blade_uses, blade_utility (healing)
-[28-29] = barrier_uses, barrier_utility (absorbed)
-[30-31] = combustion_uses, combustion_utility (kills)
-[32-33] = jump_uses, jump_utility (reserved)
-[34-35] = warp_uses, warp_utility (reserved)
-[36-43] = reserved for 4 future abilities
+[24-28] = blast_kills, blast_uses, blast_utility (nanite), blast_damage, blast_acquisitions
+[29-33] = blade_kills, blade_uses, blade_utility (healing), blade_damage, blade_acquisitions
+[34-38] = barrier_kills, barrier_uses, barrier_utility (absorbed), barrier_damage, barrier_acquisitions
+[39-43] = combustion_kills, combustion_uses, combustion_utility (kills), combustion_damage, combustion_acquisitions
+[44-48] = reserved1_kills, reserved1_uses, reserved1_utility, reserved1_damage, reserved1_acquisitions
 ```
 
-**Summary Stats (Slots 44-47):**
+**Acquisition Flags (Slots 49-51):**
 
 ```
-[44] = total_kills
-[45] = total_damage
-[46] = total_ability_uses
-[47] = total_ability_utility
+[49] = jump_acquisitions (packed by client)
+[50] = warp_acquisitions (packed by client)
+[51] = miscellaneous_acquisitions (packed by client)
 ```
 
-**Unused:** Slots 48-63 (16 slots for future expansion)
+**Reserved (Slots 52-53):**
+
+```
+[52-53] = Reserved for future use
+```
+
+**Round Times (Slots 54-63):** 10 round times in milliseconds
+
+```
+[54] = round_1_time
+[55] = round_2_time
+[56] = round_3_time
+[57] = round_4_time
+[58] = round_5_time
+[59] = round_6_time
+[60] = round_7_time
+[61] = round_8_time
+[62] = round_9_time
+[63] = round_10_time
+```
 
 ---
 
