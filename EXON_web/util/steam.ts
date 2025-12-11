@@ -138,8 +138,6 @@ export async function getTop10ScoresAllDifficulties(): Promise<{
       }
       const data = await response.json();
 
-      console.log('Steam API Response:', JSON.stringify(data, null, 2));
-
       // Check different possible response structures
       let entries = null;
       if (data?.leaderboardEntryInformation?.leaderboardEntries) {
