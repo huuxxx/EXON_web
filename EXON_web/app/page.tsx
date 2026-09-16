@@ -3,6 +3,7 @@ import Image from 'next/image';
 import React from 'react';
 import Particles from './components/particles';
 import GameCarousel from './components/GameCarousel';
+import LogoGlitch from './components/LogoGlitch';
 import { getTop10ScoresAllDifficulties } from '@/util/steam';
 import LeaderboardTable from './components/LeaderboardTable';
 
@@ -23,15 +24,7 @@ export default async function Home() {
       <div className="container mx-auto px-4 overflow-x-hidden -mt-12">
         {/* Large screen: Logo centered with leaderboard absolutely positioned */}
         <div className="relative flex justify-center items-center mb-2">
-          <div className="animate-hue-rotate">
-            <Image
-              src="/EXON_Logo.png"
-              alt="EXON Logo"
-              width={896}
-              height={504}
-              className="rounded-lg max-w-full h-auto"
-            />
-          </div>
+          <LogoGlitch />
           {/* Leaderboard absolutely positioned to the right on extra large screens */}
           <div className="hidden xl:block absolute right-0 top-16">
             <LeaderboardTable data={leaderboardData} />
