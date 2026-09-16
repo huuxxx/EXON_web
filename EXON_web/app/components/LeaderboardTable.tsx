@@ -39,6 +39,10 @@ export default function LeaderboardTable({ data }: LeaderboardTableProps) {
 
   return (
     <div className="bg-zinc-900/50 backdrop-blur-sm rounded-lg p-3 sm:p-4 border border-zinc-800 w-full xl:w-[300px] max-w-[600px] xl:max-w-[300px] mx-auto">
+      <h1 className="text-center text-sm font-bold text-zinc-100 mb-2 whitespace-nowrap">
+        Gauntlet Mode Leaderboard
+      </h1>
+
       <div className="flex items-center justify-between mb-2">
         <button
           onClick={goToPrevious}
@@ -55,7 +59,9 @@ export default function LeaderboardTable({ data }: LeaderboardTableProps) {
           </svg>
         </button>
 
-        <h2 className="text-lg font-bold text-zinc-100">{difficulties[currentDifficultyIndex]}</h2>
+        <h2 className="w-20 text-center text-lg font-bold text-zinc-100 whitespace-nowrap">
+          {difficulties[currentDifficultyIndex]}
+        </h2>
 
         <button
           onClick={goToNext}
@@ -69,12 +75,12 @@ export default function LeaderboardTable({ data }: LeaderboardTableProps) {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full table-fixed text-sm">
           <thead>
             <tr className="border-b border-zinc-700">
-              <th className="text-left py-1.5 px-2 text-zinc-400 font-medium">Rank</th>
+              <th className="w-12 text-left py-1.5 px-2 text-zinc-400 font-medium">Rank</th>
               <th className="text-left py-1.5 px-2 text-zinc-400 font-medium">Player</th>
-              <th className="text-right py-1.5 px-2 text-zinc-400 font-medium">Score</th>
+              <th className="w-24 text-right py-1.5 px-2 text-zinc-400 font-medium">Score</th>
             </tr>
           </thead>
           <tbody>
