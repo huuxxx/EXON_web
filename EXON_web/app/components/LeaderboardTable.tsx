@@ -1,22 +1,61 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LeaderboardEntry, formatMillisecondsAsTime } from '@/util/steam';
 
-interface LeaderboardTableProps {
-  data: {
-    easy: LeaderboardEntry[];
-    medium: LeaderboardEntry[];
-    hard: LeaderboardEntry[];
-    veryHard: LeaderboardEntry[];
-  };
+type LeaderboardData = Record<(typeof difficultyKeys)[number], LeaderboardEntry[]>;
+
+const emptyLeaderboardData: LeaderboardData = {
+  easy: [],
+  medium: [],
+  hard: [],
+  veryHard: [],
+};
+
+let leaderboardDataPromise: Promise<LeaderboardData> | null = null;
+
+function fetchLeaderboardData() {
+  if (!leaderboardDataPromise) {
+    leaderboardDataPromise = fetch('/api/leaderboard', { cache: 'no-store' })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Leaderboard request failed: ${response.status}`);
+        return response.json() as Promise<LeaderboardData>;
+      })
+      .catch((error) => {
+        leaderboardDataPromise = null;
+        throw error;
+      });
+  }
+
+  return leaderboardDataPromise;
 }
 
 const difficulties = ['Easy', 'Medium', 'Hard', 'Very Hard'] as const;
 const difficultyKeys = ['easy', 'medium', 'hard', 'veryHard'] as const;
 
-export default function LeaderboardTable({ data }: LeaderboardTableProps) {
+export default function LeaderboardTable() {
+  const [data, setData] = useState<LeaderboardData>(emptyLeaderboardData);
+  const [isLoading, setIsLoading] = useState(true);
   const [currentDifficultyIndex, setCurrentDifficultyIndex] = useState(3); // Start with Very Hard
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchLeaderboardData()
+      .then((leaderboard) => {
+        if (!cancelled) setData(leaderboard);
+      })
+      .catch((error) => {
+        console.error('Failed to load leaderboard:', error);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const currentDifficulty = difficultyKeys[currentDifficultyIndex];
   const currentEntries = data[currentDifficulty];
@@ -60,7 +99,7 @@ export default function LeaderboardTable({ data }: LeaderboardTableProps) {
         </button>
 
         <h2 className="w-20 text-center text-lg font-bold text-zinc-100 whitespace-nowrap">
-          {difficulties[currentDifficultyIndex]}
+          {isLoading ? '...loading' : difficulties[currentDifficultyIndex]}
         </h2>
 
         <button

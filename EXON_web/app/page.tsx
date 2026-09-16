@@ -4,7 +4,6 @@ import React from 'react';
 import Particles from './components/particles';
 import GameCarousel from './components/GameCarousel';
 import LogoGlitch from './components/LogoGlitch';
-import { getTop10ScoresAllDifficulties } from '@/util/steam';
 import LeaderboardTable from './components/LeaderboardTable';
 
 const navigation = [
@@ -13,12 +12,9 @@ const navigation = [
   { name: 'Blog', href: 'https://hux-dev.com/blogs/EXON/' },
 ];
 
-// Force dynamic rendering - fetch fresh data on every request
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force-static';
 
-export default async function Home() {
-  const leaderboardData = await getTop10ScoresAllDifficulties();
-
+export default function Home() {
   return (
     <>
       <div className="container mx-auto px-4 overflow-x-hidden -mt-12">
@@ -27,7 +23,7 @@ export default async function Home() {
           <LogoGlitch />
           {/* Leaderboard absolutely positioned to the right on extra large screens */}
           <div className="hidden xl:block absolute right-0 top-16">
-            <LeaderboardTable data={leaderboardData} />
+            <LeaderboardTable />
           </div>
         </div>
 
@@ -66,7 +62,7 @@ export default async function Home() {
 
           {/* Large and below: Leaderboard below everything */}
           <div className="xl:hidden w-full max-w-md mx-auto">
-            <LeaderboardTable data={leaderboardData} />
+            <LeaderboardTable />
           </div>
         </div>
       </div>
